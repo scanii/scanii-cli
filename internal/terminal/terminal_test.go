@@ -31,7 +31,7 @@ func captureErr(action func()) string {
 
 func TestSection(t *testing.T) {
 	out := captureOut(func() { Section("Account information") })
-	if !strings.Contains(out, ":: Account information") {
+	if !strings.Contains(out, "## Account information") {
 		t.Fatalf("expected section header, got %q", out)
 	}
 	// should have blank lines before and after
