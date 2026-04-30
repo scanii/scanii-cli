@@ -100,16 +100,16 @@ func RunServer(flags *Flags) {
 	//goland:noinspection HttpUrlsUsage
 	fmt.Println()
 	terminal.Info(fmt.Sprintf("Sample usage: curl -u %s:%s http://%s/v2.2/ping", flags.Key, flags.Secret, flags.Address))
-	terminal.Section("We also provide fake sample files you can use to trigger findings")
-	terminal.Info(fmt.Sprintf("content.image.nsfw.nudity: http://%s/static/samples/image.jpg", flags.Address))
-	terminal.Info(fmt.Sprintf("content.en.language.nsfw.0: http://%s/static/samples/language.txt", flags.Address))
-	terminal.Info(fmt.Sprintf("content.malicious.local-test-file: http://%s/static/samples/malware", flags.Address))
+	terminal.Section("We also provide fake sample files you can use to trigger findings:")
+	terminal.Info(fmt.Sprintf("∙ content.image.nsfw.nudity: http://%s/static/samples/image.jpg", flags.Address))
+	terminal.Info(fmt.Sprintf("∙ content.en.language.nsfw.0: http://%s/static/samples/language.txt", flags.Address))
+	terminal.Info(fmt.Sprintf("∙ content.malicious.local-test-file: http://%s/static/samples/malware", flags.Address))
 	fmt.Println()
-	terminal.Info("Remember this is for testing purposes only files aren't really analyzed 👍")
+	terminal.Warn("This server is for testing purposes only files aren't really analyzed.")
 
 	listen, err := net.Listen("tcp", flags.Address)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
+		_, _ = fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(2)
 	}
 
@@ -120,7 +120,7 @@ func RunServer(flags *Flags) {
 	err = srv.Serve(listen)
 	if err != nil {
 		slog.Error("server error", "error", err)
-		fmt.Fprintln(os.Stderr, err.Error())
+		_, _ = fmt.Fprintln(os.Stderr, err.Error())
 		os.Exit(3)
 	}
 }

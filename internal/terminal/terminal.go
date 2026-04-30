@@ -108,8 +108,7 @@ func styled(code, text string) string {
 // Section prints a bold section header: \n:: Title\n
 func Section(title string) {
 	_, _ = fmt.Fprintln(stdout)
-	_, _ = fmt.Fprintln(stdout, styled(Bold, ":: "+title))
-	_, _ = fmt.Fprintln(stdout)
+	_, _ = fmt.Fprintf(stdout, "%s %s\n", styled(Green, "##"), title)
 }
 
 // Title prints a titled header: \n# Title\n
@@ -145,7 +144,7 @@ func Success(message string) {
 // Error prints a red "error:" prefix to stderr.
 func Error(message string) {
 	if IsTTY() {
-		_, _ = fmt.Fprintf(stderr, "%s %s\n", styled(Red, "error:"), message)
+		_, _ = fmt.Fprintf(stderr, "%s %s\n", styled(Red, "Error:"), message)
 	} else {
 		_, _ = fmt.Fprintf(stderr, "error: %s\n", message)
 	}
@@ -154,7 +153,7 @@ func Error(message string) {
 // Warn prints a yellow "warning:" prefix.
 func Warn(message string) {
 	if IsTTY() {
-		_, _ = fmt.Fprintf(stdout, "%s %s\n", styled(Yellow, "warning:"), message)
+		_, _ = fmt.Fprintf(stdout, "%s %s\n", styled(Yellow, "Warning:"), message)
 	} else {
 		_, _ = fmt.Fprintf(stdout, "warning: %s\n", message)
 	}
