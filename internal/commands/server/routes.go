@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -99,6 +100,15 @@ func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL st
 	mux.HandleFunc("GET /static/eicar.txt", serverEICAR)
 	fileServer := http.FileServer(http.FS(assets.EmbeddedFiles))
 	mux.Handle("GET /static/", http.StripPrefix("/static/", fileServer))
+
+	// healthcheck route used by the docker container:
+	mux.Handle("GET /healthcheck", http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.WriteHeader(http.StatusOK)
+		_, err := io.WriteString(writer, "UP")
+		if err != nil {
+			slog.Error("failed to write status response", "error", err)
+		}
+	}))
 
 	mux.Handle("GET /v2.2/account.json", wrap(handlers.Account))
 	mux.Handle("GET /v2.2/ping", wrap(handlers.Ping))
