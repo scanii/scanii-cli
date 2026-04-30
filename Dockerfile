@@ -11,7 +11,7 @@ COPY sc /sc
 EXPOSE 4000
 
 HEALTHCHECK --interval=5s --timeout=3s --start-period=2s --retries=3 \
-  CMD wget -q --spider http://localhost:4000/v2.2/ping || exit 1
+  CMD wget -q --spider http://localhost:4000/healthcheck || exit 1
 
 ENTRYPOINT ["/sc"]
 CMD ["server"]
