@@ -33,16 +33,13 @@ func TestShouldProcessLocationSync(t *testing.T) {
 		t.Fatalf("failed to create client: %s", err)
 	}
 
-	// The server mock-fetches the URL (does not actually retrieve it), so findings
-	// are always empty for location-based submissions. The test verifies the API
-	// surface accepts the location field and echoes metadata correctly.
 	result, err := runLocationProcess(context.Background(), client, fmt.Sprintf("http://%s/static/eicar.txt", ts.Endpoint), "", "m1=v1")
 	if err != nil {
 		t.Fatalf("failed to process file: %s", err)
 	}
 
-	if result.id == "" {
-		t.Fatal("expected result to have an id")
+	if result.findings[0] != "content.malicious.eicar-test-signature" {
+		t.Fatalf("expected finding content.malicious.eicar-test-signature, got %s", result.findings[0])
 	}
 
 	if result.metadata["m1"] != "v1" {

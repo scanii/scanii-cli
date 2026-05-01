@@ -418,19 +418,37 @@ func (h FakeHandler) ProcessFile(w http.ResponseWriter, r *http.Request) {
 			metadata[k] = buf.String()
 		}
 		if part.FormName() == "location" {
-			var locBuf strings.Builder
-			_, err := io.Copy(&locBuf, part)
+			builder := strings.Builder{}
+			_, err := io.Copy(&builder, part)
 			if err != nil {
 				h.renderServerError(w, err.Error())
 				return
 			}
+
 			locationFound = true
-			slog.Debug("location field received", "location", locBuf.String())
-			// Mock acknowledgment: do not actually fetch the URL.
-			result = engine.Result{
-				ContentLength: 1,
-				Findings:      []string{},
-				CreationDate:  time.Now().UTC().Format(time.RFC3339Nano),
+			location := builder.String()
+			// fetching content
+			slog.Debug("fetching content from", "location", location)
+			req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, location, http.NoBody)
+			if err != nil {
+				h.renderServerError(w, err.Error())
+				return
+			}
+			resp, err := http.DefaultClient.Do(req) //nolint:gosec
+			if err != nil {
+				h.renderClientError(http.StatusBadRequest, w, err.Error())
+				return
+			}
+			defer resp.Body.Close() //nolint
+			if resp.StatusCode == http.StatusOK {
+				// performing analysis, it has to happen while we're parsing the stream
+				result, err = h.engine.Process(resp.Body)
+				if err != nil {
+					h.renderServerError(w, err.Error())
+					return
+				}
+			} else {
+				result.Error = errorCloudNotDownload
 			}
 		}
 	}

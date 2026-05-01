@@ -33,7 +33,7 @@ func TestRetrieveTrace_KnownID(t *testing.T) {
 	}
 
 	// Retrieve the trace.
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/v2.2/files/"+created.ID+"/trace", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/v2.2/files/"+created.ID+"/trace", http.NoBody)
 	if err != nil {
 		t.Fatalf("new request: %s", err)
 	}
@@ -85,7 +85,7 @@ func TestRetrieveTrace_KnownID(t *testing.T) {
 func TestRetrieveTrace_UnknownID(t *testing.T) {
 	ts := startServer(t)
 
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/v2.2/files/doesnotexist/trace", nil)
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/v2.2/files/doesnotexist/trace", http.NoBody)
 	if err != nil {
 		t.Fatalf("new request: %s", err)
 	}
@@ -118,13 +118,14 @@ func TestRetrieveTrace_UnknownID(t *testing.T) {
 }
 
 // TestProcessFile_LocationOnly verifies that POST /v2.2/files with a location field
-// (and no file) returns 201 with a ProcessingResponse.
+// (and no file) fetches the URL, scans it, and returns 201 with a ProcessingResponse.
+// Uses the server's own /static/eicar.txt so no external network access is required.
 func TestProcessFile_LocationOnly(t *testing.T) {
 	ts := startServer(t)
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
-	if err := mw.WriteField("location", "https://example.com/file.bin"); err != nil {
+	if err := mw.WriteField("location", ts.URL+"/static/eicar.txt"); err != nil {
 		t.Fatalf("write field: %s", err)
 	}
 	if err := mw.Close(); err != nil {
