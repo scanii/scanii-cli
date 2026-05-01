@@ -58,3 +58,15 @@ type ErrorResponse struct {
 	ID       *string            `json:"id,omitempty"`
 	Metadata *map[string]string `json:"metadata,omitempty"`
 }
+
+// TraceEvent is a single event in a processing trace.
+type TraceEvent struct {
+	Message   *string `json:"message,omitempty"`
+	Timestamp *string `json:"timestamp,omitempty"`
+}
+
+// TraceResponse is the ordered list of processing events for a given id.
+type TraceResponse struct {
+	Events *[]TraceEvent `json:"events,omitempty"`
+	ID     *string       `json:"id,omitempty"`
+}

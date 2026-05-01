@@ -500,6 +500,38 @@ func (h FakeHandler) ProcessFile(w http.ResponseWriter, r *http.Request) {
 	}
 
 }
+func (h FakeHandler) RetrieveTrace(w http.ResponseWriter, _ *http.Request, id string) {
+	result := engine.Result{}
+	if err := h.store.load(id, &result); err != nil {
+		h.renderClientError(http.StatusNotFound, w, fmt.Sprintf("No trace exists for processing id %s", id))
+		return
+	}
+
+	creationTime, err := time.Parse(time.RFC3339Nano, result.CreationDate)
+	if err != nil {
+		creationTime = time.Now().UTC()
+	}
+
+	receivedAt := creationTime.Add(-100 * time.Millisecond).Format(time.RFC3339Nano)
+	processedAt := creationTime.Format(time.RFC3339Nano)
+	receivedMsg := "content received for processing"
+	processedMsg := "content processed successfully"
+
+	events := []client.TraceEvent{
+		{Timestamp: &receivedAt, Message: &receivedMsg},
+		{Timestamp: &processedAt, Message: &processedMsg},
+	}
+
+	resp := client.TraceResponse{
+		ID:     &id,
+		Events: &events,
+	}
+
+	if err := writeJSON(w, http.StatusOK, resp, nil); err != nil {
+		h.renderServerError(w, err.Error())
+	}
+}
+
 func (h FakeHandler) renderServerError(w http.ResponseWriter, message string) {
 	trace := fmt.Sprintf("%s\n%s", message, debug.Stack())
 	slog.Error(trace)
