@@ -2,7 +2,7 @@
 
 All notable changes to `scanii-cli` are documented here. Versions follow [SemVer](https://semver.org).
 
-## Unreleased
+## v1.5.0 — 2026-05-02
 
 ### Added
 
