@@ -22,6 +22,7 @@ func Command(ctx context.Context, profile *string) *cobra.Command {
 	parent.AddCommand(asyncCommand(ctx, profile, &metadata))
 	parent.AddCommand(fetchCommand(ctx, profile, &metadata))
 	parent.AddCommand(retrieveCommand(ctx, profile))
+	parent.AddCommand(traceCommand(ctx, profile))
 
 	return &parent
 }
