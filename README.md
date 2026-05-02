@@ -84,6 +84,12 @@ Retrieve the result of an async scan:
 sc files retrieve RESULT_ID
 ```
 
+Retrieve the processing trace for a result:
+
+```shell
+sc files trace RESULT_ID
+```
+
 ### 4. Scan a remote URL
 
 Submit a URL for server-side fetch and scan:
@@ -208,6 +214,7 @@ All endpoints are under the `/v2.2/` prefix and require HTTP Basic Auth:
 | `POST` | `/v2.2/files/async` | Async file scan (returns pending ID) |
 | `POST` | `/v2.2/files/fetch` | Fetch remote URL and scan |
 | `GET` | `/v2.2/files/{id}` | Retrieve scan result |
+| `GET` | `/v2.2/files/{id}/trace` | Retrieve processing trace |
 | `POST` | `/v2.2/auth/tokens` | Create auth token |
 | `GET` | `/v2.2/auth/tokens/{id}` | Retrieve auth token |
 | `DELETE` | `/v2.2/auth/tokens/{id}` | Delete auth token |
@@ -483,6 +490,7 @@ When using the local server (Docker or binary), the default credentials are:
 | `sc files async <path>` | Asynchronous file/directory scan |
 | `sc files fetch <url>` | Fetch and scan a remote URL |
 | `sc files retrieve <id>` | Retrieve a scan result |
+| `sc files trace <id>` | Retrieve the processing trace for a scan result |
 | `sc auth-token create` | Create a temporary auth token |
 | `sc auth-token retrieve <id>` | Retrieve token details |
 | `sc auth-token delete <id>` | Revoke a token |

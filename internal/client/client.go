@@ -98,6 +98,13 @@ type RetrieveFileResult struct {
 	Result *ProcessingResponse
 }
 
+// RetrieveTraceResult is the response from the trace retrieve endpoint.
+type RetrieveTraceResult struct {
+	Response
+	Trace *TraceResponse
+	Error *ErrorResponse
+}
+
 // CreateTokenResult is the response from the create token endpoint.
 type CreateTokenResult struct {
 	Response
@@ -255,6 +262,31 @@ func (c *Client) RetrieveFile(ctx context.Context, id string) (*RetrieveFileResu
 			return nil, fmt.Errorf("parsing retrieve file response: %w", err)
 		}
 		result.Result = &pr
+	}
+	return result, nil
+}
+
+// RetrieveTrace retrieves the processing trace for a previously processed file.
+func (c *Client) RetrieveTrace(ctx context.Context, id string) (*RetrieveTraceResult, error) {
+	status, header, body, err := c.do(ctx, http.MethodGet, "/files/"+id+"/trace", "", nil)
+	if err != nil {
+		return nil, err
+	}
+	result := &RetrieveTraceResult{Response: Response{StatusCode: status, Header: header}}
+	if len(body) > 0 {
+		switch {
+		case status == http.StatusOK:
+			var tr TraceResponse
+			if err := json.Unmarshal(body, &tr); err != nil {
+				return nil, fmt.Errorf("parsing retrieve trace response: %w", err)
+			}
+			result.Trace = &tr
+		case status >= 400:
+			var er ErrorResponse
+			if err := json.Unmarshal(body, &er); err == nil {
+				result.Error = &er
+			}
+		}
 	}
 	return result, nil
 }
