@@ -233,10 +233,11 @@ Output:
 
 ```
 Scanii local server starting
-API Key:      key
-API Secret:   secret
-Engine Rules: 5
-Address:      http://localhost:4000
+API Key:       key
+API Secret:    secret
+Engine Rules:  5
+Callback Wait: 100ms
+Address:       http://localhost:4000
 
 Sample usage: curl -u key:secret http://localhost:4000/v2.2/ping
 
@@ -261,7 +262,7 @@ sc server --key my-key --secret my-secret --address 0.0.0.0:8080
 | `-s, --secret` | `secret` | API secret |
 | `-e, --engine` | built-in | Path to a custom engine rules JSON file |
 | `-d, --data` | temp dir | Directory for storing processing results |
-| `-w, --callback-wait` | `100ms` | Delay before firing callbacks |
+| `-w, --callback-wait` | `100ms` | Delay before firing callbacks; overrides `callback_wait` in the engine config |
 
 ### API endpoints
 
@@ -377,6 +378,7 @@ The JSON format is:
 
 ```json
 {
+  "callback_wait": "100ms",
   "rules": [
     {
       "format": "sha256",
@@ -387,15 +389,28 @@ The JSON format is:
 }
 ```
 
+`callback_wait` is optional and must be a duration string such as `"100ms"` or
+`"2s"`; `--callback-wait` overrides it when passed.
+
 Supported hash formats are `sha1` and `sha256`. Generate a hash for your test file with:
 
 ```shell
 shasum -a 256 /path/to/your/test-file
 ```
 
+The rules in your file replace the built-in ones rather than adding to them, so
+`Engine Rules:` in the startup banner reflects your file alone. A config that is
+missing, unreadable, or not a valid rules file stops the server from starting
+instead of quietly falling back to the built-in rules:
+
+```
+% sc server --engine foo
+error: opening engine config: open foo: no such file or directory
+```
+
 ### Callbacks
 
-The local server supports callbacks. When a `callback` URL is included in an async or fetch request, the server POSTs a JSON payload to that URL containing the processing result (id, findings, checksum, content_type, content_length, creation_date, and metadata). The callback fires after a configurable delay (default 100ms, controlled by `--callback-wait`).
+The local server supports callbacks. When a `callback` URL is included in an async or fetch request, the server POSTs a JSON payload to that URL containing the processing result (id, findings, checksum, content_type, content_length, creation_date, and metadata). The callback fires after a configurable delay: 100ms by default, `callback_wait` in an `--engine` config, or `--callback-wait` which overrides both. The effective value is shown as `Callback Wait:` in the startup banner.
 
 Callbacks are fire-and-forget: if the target URL is unreachable, the delivery fails silently and the server continues operating normally.
 

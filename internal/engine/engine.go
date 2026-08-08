@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/gabriel-vasile/mimetype"
@@ -19,7 +20,10 @@ import (
 var defaultConfig string
 
 type Engine struct {
-	config        *Config
+	config *Config
+	// callbackWait is held separately, in nanoseconds, because the callback
+	// runner reads it from its own goroutine every time it delivers.
+	callbackWait  atomic.Int64
 	callbackQueue chan callbackItem
 }
 
@@ -29,8 +33,32 @@ type Rule struct {
 	Result  string `json:"result"`
 }
 type Config struct {
-	Rules        []Rule         `json:"rules"`
-	CallbackWait *time.Duration `json:"callback_wait"`
+	Rules        []Rule    `json:"rules"`
+	CallbackWait *Duration `json:"callback_wait"`
+}
+
+// Duration is a time.Duration that reads from JSON as a duration string, so a
+// config says "100ms" rather than 100000000. A bare number would be nanoseconds,
+// which is a trap: "callback_wait": 100 means 100ns, not 100ms.
+type Duration time.Duration
+
+func (d *Duration) UnmarshalJSON(data []byte) error {
+	var text string
+	if err := json.Unmarshal(data, &text); err != nil {
+		return fmt.Errorf(`callback_wait must be a duration string such as "100ms": %w`, err)
+	}
+
+	parsed, err := time.ParseDuration(text)
+	if err != nil {
+		return fmt.Errorf("callback_wait %q is not a valid duration: %w", text, err)
+	}
+
+	*d = Duration(parsed)
+	return nil
+}
+
+func (d Duration) MarshalJSON() ([]byte, error) {
+	return json.Marshal(time.Duration(d).String())
 }
 
 func New() (*Engine, error) {
@@ -58,7 +86,23 @@ func (e *Engine) LoadConfig(reader io.Reader) error {
 	if err != nil {
 		return err
 	}
+
+	if e.config.CallbackWait != nil {
+		e.SetCallbackWait(time.Duration(*e.config.CallbackWait))
+	}
 	return nil
+}
+
+// SetCallbackWait overrides how long the engine waits before delivering a
+// callback. It takes effect for callbacks that have not been delivered yet,
+// which is what lets --callback-wait win over a config file loaded before it.
+func (e *Engine) SetCallbackWait(wait time.Duration) {
+	e.callbackWait.Store(int64(wait))
+}
+
+// CallbackWait returns the delay applied before delivering a callback.
+func (e *Engine) CallbackWait() time.Duration {
+	return time.Duration(e.callbackWait.Load())
 }
 
 func (e *Engine) RuleCount() int {

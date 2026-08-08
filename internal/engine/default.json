@@ -1,5 +1,5 @@
 {
-  "callback_wait": 100,
+  "callback_wait": "100ms",
   "rules": [
     {
       "format": "sha1",
