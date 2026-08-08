@@ -32,12 +32,15 @@ func StartServer() *Server {
 	endpoint := fmt.Sprintf("localhost:%d", 20_000+rand.Intn(1000)) //nolint:gosec
 	ready := make(chan bool)
 	go func() {
-		server.RunServer(&server.Flags{
+		// panic rather than let <-ready block forever on a server that never started
+		if err := server.RunServer(&server.Flags{
 			Key:       Key,
 			Secret:    Secret,
 			Address:   endpoint,
 			ReadyChan: ready,
-		})
+		}); err != nil {
+			panic(err)
+		}
 	}()
 	<-ready
 

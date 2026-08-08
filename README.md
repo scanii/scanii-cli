@@ -346,6 +346,16 @@ Supported hash formats are `sha1` and `sha256`. Generate a hash for your test fi
 shasum -a 256 /path/to/your/test-file
 ```
 
+The rules in your file replace the built-in ones rather than adding to them, so
+`Engine Rules:` in the startup banner reflects your file alone. A config that is
+missing, unreadable, or not a valid rules file stops the server from starting
+instead of quietly falling back to the built-in rules:
+
+```
+% sc server --engine foo
+error: opening engine config: open foo: no such file or directory
+```
+
 ### Callbacks
 
 The local server supports callbacks. When a `callback` URL is included in an async or fetch request, the server POSTs a JSON payload to that URL containing the processing result (id, findings, checksum, content_type, content_length, creation_date, and metadata). The callback fires after a configurable delay (default 100ms, controlled by `--callback-wait`).

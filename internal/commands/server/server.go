@@ -29,8 +29,9 @@ type Flags struct {
 	CallBackWait time.Duration
 }
 
-// RunServer starts the mock Scanii server. This function blocks.
-func RunServer(flags *Flags) {
+// RunServer starts the mock Scanii server. This function blocks until the
+// server stops, and returns an error if it could not be started.
+func RunServer(flags *Flags) error {
 	if flags.Key == "" {
 		terminal.Info("No API key provided, generating one...")
 		flags.Key = fmt.Sprintf("akk_%s", identifiers.GenerateShort())
@@ -45,18 +46,17 @@ func RunServer(flags *Flags) {
 		// Ensure the system temp directory exists — minimal Docker images
 		// (e.g. scratch, distroless) may not include /tmp.
 		if err := os.MkdirAll(os.TempDir(), 0755); err != nil {
-			panic(err)
+			return fmt.Errorf("creating temp directory: %w", err)
 		}
 		dir, err := os.MkdirTemp("", "scanii-cli")
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("creating storage directory: %w", err)
 		}
 		flags.Data = dir
 	} else {
 		if _, err := os.Stat(flags.Data); errors.Is(err, os.ErrNotExist) {
-			err := os.MkdirAll(flags.Data, 0755)
-			if err != nil {
-				panic(err)
+			if err := os.MkdirAll(flags.Data, 0755); err != nil {
+				return fmt.Errorf("creating storage directory %s: %w", flags.Data, err)
 			}
 		}
 	}
@@ -65,8 +65,16 @@ func RunServer(flags *Flags) {
 
 	eng, err := engine.New()
 	if err != nil {
-		slog.Error("could not create engine")
-		os.Exit(2)
+		return fmt.Errorf("creating engine: %w", err)
+	}
+
+	// a bad --engine config is worth failing on: starting anyway would serve the
+	// built-in rules while looking like it had honored the flag
+	if flags.Engine != "" {
+		if err := loadEngineConfig(eng, flags.Engine); err != nil {
+			return err
+		}
+		slog.Debug("loaded engine config", "path", flags.Engine, "rules", eng.RuleCount())
 	}
 
 	Setup(mux, eng, flags.Key, flags.Secret, flags.Data, "http://"+flags.Address)
@@ -109,20 +117,35 @@ func RunServer(flags *Flags) {
 
 	listen, err := net.Listen("tcp", flags.Address)
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(2)
+		return fmt.Errorf("listening on %s: %w", flags.Address, err)
 	}
 
 	if flags.ReadyChan != nil {
 		flags.ReadyChan <- true
 	}
 
-	err = srv.Serve(listen)
-	if err != nil {
-		slog.Error("server error", "error", err)
-		_, _ = fmt.Fprintln(os.Stderr, err.Error())
-		os.Exit(3)
+	if err := srv.Serve(listen); err != nil {
+		return fmt.Errorf("serving: %w", err)
 	}
+
+	return nil
+}
+
+// loadEngineConfig replaces the engine's built-in rules with the config file at
+// path. Unknown fields are rejected by the decoder, so a file that is valid JSON
+// but not an engine config is reported rather than silently ignored.
+func loadEngineConfig(eng *engine.Engine, path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("opening engine config: %w", err)
+	}
+	defer func() { _ = file.Close() }()
+
+	if err := eng.LoadConfig(file); err != nil {
+		return fmt.Errorf("loading engine config %s: %w", path, err)
+	}
+
+	return nil
 }
 
 // serverEICAR decodes the embedded base64 EICAR payload and returns it
@@ -138,8 +161,8 @@ func Command() *cobra.Command {
 	serverF := Flags{}
 	serverCmd := &cobra.Command{
 		Use: "server",
-		Run: func(cmd *cobra.Command, args []string) {
-			RunServer(&serverF)
+		RunE: func(_ *cobra.Command, _ []string) error {
+			return RunServer(&serverF)
 		},
 		Short: "Start a mock server suitable for testing purposes",
 	}
