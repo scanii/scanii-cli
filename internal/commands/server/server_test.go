@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/uvasoftware/scanii-cli/internal/engine"
 )
@@ -108,4 +109,41 @@ func TestRunServerFailsOnBadEngineConfig(t *testing.T) {
 	if !strings.Contains(err.Error(), "opening engine config") {
 		t.Fatalf("expected an engine config error, got %q", err)
 	}
+}
+
+func TestCallbackWaitFlagOverridesEngineConfig(t *testing.T) {
+	config := writeConfig(t, "slow-callbacks.json", `{"callback_wait": "5s", "rules": []}`)
+
+	tests := []struct {
+		name string
+		flag *time.Duration
+		want time.Duration
+	}{
+		{name: "config wins when the flag is not passed", flag: nil, want: 5 * time.Second},
+		{name: "flag wins when passed", flag: ptr(2 * time.Second), want: 2 * time.Second},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			eng, err := engine.New()
+			if err != nil {
+				t.Fatalf("engine.New: %s", err)
+			}
+
+			if err := loadEngineConfig(eng, config); err != nil {
+				t.Fatalf("loadEngineConfig failed: %s", err)
+			}
+			if tc.flag != nil {
+				eng.SetCallbackWait(*tc.flag)
+			}
+
+			if got := eng.CallbackWait(); got != tc.want {
+				t.Fatalf("expected a callback wait of %s, got %s", tc.want, got)
+			}
+		})
+	}
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }

@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestNew(t *testing.T) {
@@ -177,5 +178,91 @@ func BenchmarkEngine(b *testing.B) {
 		if err != nil {
 			b.Fatal(err.Error())
 		}
+	}
+}
+
+func TestLoadConfigCallbackWait(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  string
+		want    time.Duration
+		wantErr string
+	}{
+		{
+			name:   "duration string",
+			config: `{"callback_wait": "2s", "rules": []}`,
+			want:   2 * time.Second,
+		},
+		{
+			name:   "sub second duration",
+			config: `{"callback_wait": "250ms", "rules": []}`,
+			want:   250 * time.Millisecond,
+		},
+		{
+			// a bare number used to be read as nanoseconds, so "100" quietly meant 100ns
+			name:    "bare number is rejected",
+			config:  `{"callback_wait": 100, "rules": []}`,
+			wantErr: "duration string",
+		},
+		{
+			name:    "unparseable duration",
+			config:  `{"callback_wait": "soon", "rules": []}`,
+			wantErr: "not a valid duration",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			engine, err := New()
+			if err != nil {
+				t.Fatalf("New failed: %s", err)
+			}
+
+			err = engine.LoadConfig(strings.NewReader(tc.config))
+			if tc.wantErr != "" {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Fatalf("expected the error to mention %q, got %q", tc.wantErr, err)
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("LoadConfig failed: %s", err)
+			}
+			if engine.CallbackWait() != tc.want {
+				t.Fatalf("expected a callback wait of %s, got %s", tc.want, engine.CallbackWait())
+			}
+		})
+	}
+}
+
+func TestDefaultConfigCallbackWait(t *testing.T) {
+	engine, err := New()
+	if err != nil {
+		t.Fatalf("New failed: %s", err)
+	}
+
+	// regression guard: default.json used to say 100, which is 100ns not 100ms
+	if got := engine.CallbackWait(); got != 100*time.Millisecond {
+		t.Fatalf("expected the built-in callback wait to be 100ms, got %s", got)
+	}
+}
+
+func TestSetCallbackWaitOverridesConfig(t *testing.T) {
+	engine, err := New()
+	if err != nil {
+		t.Fatalf("New failed: %s", err)
+	}
+
+	if err := engine.LoadConfig(strings.NewReader(`{"callback_wait": "5s", "rules": []}`)); err != nil {
+		t.Fatalf("LoadConfig failed: %s", err)
+	}
+
+	engine.SetCallbackWait(time.Second)
+	if got := engine.CallbackWait(); got != time.Second {
+		t.Fatalf("expected the override to win, got %s", got)
 	}
 }

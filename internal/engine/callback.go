@@ -30,16 +30,14 @@ func (e *Engine) newRunner() chan callbackItem {
 	const UA = "scanii/jackfruit (see https://www.scanii.com)"
 
 	queue := make(chan callbackItem, 100)
-	wait := time.Duration(0)
-	if e.config.CallbackWait != nil {
-		wait = *e.config.CallbackWait
-	}
-	slog.Debug("callback wait", "wait", wait)
 	client := &http.Client{Timeout: 30 * time.Second}
 
 	go func() {
 		for msg := range queue {
-			slog.Debug("sending callback", "destination", msg.destination)
+			// read per delivery rather than once, so a config loaded (or a flag
+			// applied) after the engine was built still takes effect
+			wait := e.CallbackWait()
+			slog.Debug("sending callback", "destination", msg.destination, "wait", wait)
 			time.Sleep(wait)
 			slog.Debug("post wait", "destination", msg.destination)
 

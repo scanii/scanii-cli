@@ -20,13 +20,16 @@ import (
 
 // Flags holds configuration for the mock server.
 type Flags struct {
-	Address      string
-	Engine       string
-	Key          string
-	Secret       string
-	Data         string
-	ReadyChan    chan bool
-	CallBackWait time.Duration
+	Address   string
+	Engine    string
+	Key       string
+	Secret    string
+	Data      string
+	ReadyChan chan bool
+	// CallBackWait overrides the engine's callback delay. Nil means the engine
+	// config decides, which is what keeps an unpassed flag from overriding a
+	// value set in an --engine file.
+	CallBackWait *time.Duration
 }
 
 // RunServer starts the mock Scanii server. This function blocks until the
@@ -77,6 +80,11 @@ func RunServer(flags *Flags) error {
 		slog.Debug("loaded engine config", "path", flags.Engine, "rules", eng.RuleCount())
 	}
 
+	// applied after the config file so that an explicit flag wins over it
+	if flags.CallBackWait != nil {
+		eng.SetCallbackWait(*flags.CallBackWait)
+	}
+
 	Setup(mux, eng, flags.Key, flags.Secret, flags.Data, "http://"+flags.Address)
 
 	// wrap the mux with request logging middleware
@@ -103,6 +111,7 @@ func RunServer(flags *Flags) error {
 	terminal.KeyValue("API Key:", flags.Key)
 	terminal.KeyValue("API Secret:", flags.Secret)
 	terminal.KeyValue("Engine Rules:", fmt.Sprintf("%d", eng.RuleCount()))
+	terminal.KeyValue("Callback Wait:", eng.CallbackWait().String())
 	//goland:noinspection HttpUrlsUsage
 	terminal.KeyValue("Address:", fmt.Sprintf("http://%s", flags.Address))
 	//goland:noinspection HttpUrlsUsage
@@ -159,9 +168,14 @@ func serverEICAR(w http.ResponseWriter, _ *http.Request) {
 // Command returns the server cobra command.
 func Command() *cobra.Command {
 	serverF := Flags{}
+	var callbackWait time.Duration
 	serverCmd := &cobra.Command{
 		Use: "server",
-		RunE: func(_ *cobra.Command, _ []string) error {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			// only override the engine config when the flag was actually passed
+			if cmd.Flags().Changed("callback-wait") {
+				serverF.CallBackWait = &callbackWait
+			}
 			return RunServer(&serverF)
 		},
 		Short: "Start a mock server suitable for testing purposes",
@@ -169,7 +183,7 @@ func Command() *cobra.Command {
 
 	serverCmd.PersistentFlags().StringVarP(&serverF.Address, "address", "a", "0.0.0.0:4000", "Address to listen on")
 	serverCmd.PersistentFlags().StringVarP(&serverF.Engine, "engine", "e", "", "Optional engine config to load")
-	serverCmd.PersistentFlags().DurationVarP(&serverF.CallBackWait, "callback-wait", "w", 100*time.Millisecond, "Amount of time a callback should wait before firing")
+	serverCmd.PersistentFlags().DurationVarP(&callbackWait, "callback-wait", "w", 100*time.Millisecond, "Amount of time a callback should wait before firing, overrides the engine config")
 	serverCmd.PersistentFlags().StringVarP(&serverF.Data, "data", "d", "", "Result storage path, defaults to a temp directory")
 	serverCmd.PersistentFlags().StringVarP(&serverF.Key, "key", "k", "key", "API key to use, if not provided will be dynamically generated")
 	serverCmd.PersistentFlags().StringVarP(&serverF.Secret, "secret", "s", "secret", "API secret to use, if not provided will be dynamically generated")
