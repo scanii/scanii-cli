@@ -5,6 +5,7 @@ import (
 
 	"github.com/google/gops/agent"
 	"github.com/spf13/cobra"
+	"github.com/uvasoftware/scanii-cli/internal/buildinfo"
 	"github.com/uvasoftware/scanii-cli/internal/commands/account"
 	"github.com/uvasoftware/scanii-cli/internal/commands/authtoken"
 	"github.com/uvasoftware/scanii-cli/internal/commands/file"
@@ -22,10 +23,6 @@ import (
 var (
 	verbose    bool
 	profileArg string
-
-	// These variables are set in the build step
-	version = "dev"     //nolint
-	date    = "unknown" //nolint
 )
 
 func main() {
@@ -34,7 +31,7 @@ func main() {
 
 	rootCmd := &cobra.Command{
 		Use:     "sc",
-		Version: "0.0.1",
+		Version: buildinfo.Version(),
 		Short:   "Scanii CLI",
 		Long:    "A CLI to help you integrate Scanii (https://www.scanii.com) with your application",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
@@ -63,8 +60,8 @@ func main() {
 		Run: func(_ *cobra.Command, _ []string) {
 			bi, _ := debug.ReadBuildInfo()
 			terminal.Section("Scanii CLI (https://www.scanii.com)")
-			terminal.KeyValue("Version:", version)
-			terminal.KeyValue("Date:", date)
+			terminal.KeyValue("Version:", buildinfo.Version())
+			terminal.KeyValue("Date:", buildinfo.Date())
 			terminal.KeyValue("Go Version:", bi.GoVersion)
 			terminal.Section("Build settings")
 			for _, e := range bi.Settings {

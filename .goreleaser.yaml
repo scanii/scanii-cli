@@ -12,7 +12,7 @@ builds:
       - arm64
     main: ./cmd/sc/main.go
     binary: sc
-    ldflags: -s -w -X main.version={{.Version}} -X main.date={{.Date}}
+    ldflags: -s -w -X github.com/uvasoftware/scanii-cli/internal/buildinfo.version={{.Version}} -X github.com/uvasoftware/scanii-cli/internal/buildinfo.date={{.Date}}
 
 
 dockers:

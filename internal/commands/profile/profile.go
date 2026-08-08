@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/uvasoftware/scanii-cli/internal/buildinfo"
 	"github.com/uvasoftware/scanii-cli/internal/client"
 	"github.com/uvasoftware/scanii-cli/internal/terminal"
-	"github.com/uvasoftware/scanii-cli/internal/vcs"
 )
 
 // Command returns the profile cobra command.
@@ -234,7 +234,7 @@ func (c *Profile) Client() (*client.Client, error) {
 	return client.New(dest,
 		client.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
 			req.SetBasicAuth(c.APIKey(), c.APISecret())
-			req.Header.Add("User-Agent", fmt.Sprintf("github.com/uvasoftware/scanii-cli/v%s", vcs.Version()))
+			req.Header.Set("User-Agent", buildinfo.UserAgent())
 			return nil
 		}),
 		// The Scanii API has a maximum processing time of 30 minutes per request.
