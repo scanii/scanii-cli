@@ -180,12 +180,25 @@ Processing recursive directory /path/to/directory with ~12 files | ~50.3 MB
 Files 7/12  [████████████████████████░░░░░░░░░░░░░░░░░░]  58% (29.7 MB/50.3 MB)
 ```
 
-Example output on completion:
+On completion, any file that came back with findings is listed, so a directory
+scan tells you *where* the malware was and not just how much of it there was:
 
 ```
 Using endpoint: api-us1.scanii.com and API key: mykey
 Processing recursive directory /path/to/directory with ~12 files | ~50.3 MB
 Files 12/12  [████████████████████████████████████████]  100% (50.3 MB/50.3 MB)
+
+## Files with findings
+
+# /path/to/directory/quarantine/sample.txt:
+
+  id:             e353d97476fe40c6abd20418efe82b96
+  checksum/sha1:  7da9d3b0c68b1d0543acb65af4220a4745607557
+  content type:   text/plain; charset=utf-8
+  content length:  36 B
+  creation date:   Sat, 08 Aug 2026 09:07:46 EDT
+  findings:       content.malicious.eicar-test-signature
+  metadata:       none
 
 ✔ Completed in 3.1 s, 12 file(s) analyzed. Throughput 16.2 MB/s
 ✔ Files with findings: 1, unable to process: 0 and successfully processed: 12

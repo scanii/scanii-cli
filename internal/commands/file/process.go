@@ -148,7 +148,9 @@ func process(
 		close(fileChannel)
 	}()
 
-	bytesProcessed := uint64(0)
+	// a directory run only reports counts while it works, so the files that
+	// actually carry findings are collected and listed at the end
+	findings := &findingsReport{}
 
 	// Progress is measured in bytes handed to the transport rather than in files
 	// completed, so that a single large file — or a directory of a few of them —
@@ -175,10 +177,9 @@ func process(
 			filesFinished.Add(1)
 		}
 
-		// increment bytes processed
-		bytesProcessed += result.contentLength
 		if len(result.findings) > 0 {
 			filesWithFindings.Add(1)
+			findings.add(&result)
 		}
 		if isDirectory {
 			slog.Debug("progress", "files_started", filesStarted.Load(), "files_finished", filesFinished.Load(), "files_failed", filesFailed.Load(), "files_with_findings", filesWithFindings.Load(), "total_files", filesTotal)
@@ -195,6 +196,16 @@ func process(
 	tracker.stop()
 	elapsed := time.Since(startTime)
 	throughput := float64(bytesTotal) / elapsed.Seconds()
+
+	// a single file has already printed its own result above
+	if isDirectory {
+		if withFindings := findings.sorted(); len(withFindings) > 0 {
+			terminal.Section("Files with findings")
+			for i := range withFindings {
+				printFileResult(&withFindings[i])
+			}
+		}
+	}
 
 	fmt.Println()
 	terminal.Success(fmt.Sprintf("Completed in %s, %s file(s) analyzed. Throughput %s/s", terminal.FormatDuration(elapsed), terminal.FormatNumber(int64(filesFinished.Load())), terminal.FormatBytes(uint64(throughput)))) //nolint:gosec
