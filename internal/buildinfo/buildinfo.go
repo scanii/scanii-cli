@@ -32,6 +32,13 @@ func Version() string {
 		return devVersion
 	}
 
+	return resolveVersion(bi)
+}
+
+// resolveVersion derives a version from build info, in descending order of
+// precision: the module version (a tag or a pseudo-version), then the VCS
+// revision, then a placeholder.
+func resolveVersion(bi *debug.BuildInfo) string {
 	if v := bi.Main.Version; v != "" && v != "(devel)" {
 		return v
 	}
@@ -75,6 +82,10 @@ func Date() string {
 		return unknownDate
 	}
 
+	return resolveDate(bi)
+}
+
+func resolveDate(bi *debug.BuildInfo) string {
 	for _, s := range bi.Settings {
 		if s.Key == "vcs.time" && s.Value != "" {
 			return s.Value

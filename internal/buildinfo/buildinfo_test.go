@@ -2,6 +2,7 @@ package buildinfo
 
 import (
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -24,18 +25,76 @@ func TestVersionPrefersLdflag(t *testing.T) {
 	}
 }
 
-func TestVersionFallsBackToVcsRevision(t *testing.T) {
-	// the test binary is built with -buildvcs, so with no ldflag set we expect
-	// the short revision rather than the "dev" placeholder
-	if version != "" {
-		t.Skip("binary built with a version ldflag")
+func TestResolveVersion(t *testing.T) {
+	revision := debug.BuildSetting{Key: "vcs.revision", Value: "60bc33653ac789d9e138b0908403976b5f994023"}
+	dirty := debug.BuildSetting{Key: "vcs.modified", Value: "true"}
+	clean := debug.BuildSetting{Key: "vcs.modified", Value: "false"}
+
+	tests := []struct {
+		name string
+		bi   *debug.BuildInfo
+		want string
+	}{
+		{
+			name: "module version",
+			bi:   &debug.BuildInfo{Main: debug.Module{Version: testVersion}},
+			want: testVersion,
+		},
+		{
+			name: "module pseudo version",
+			bi: &debug.BuildInfo{
+				Main:     debug.Module{Version: "v0.0.0-20260808122403-f0b7c8384bac"},
+				Settings: []debug.BuildSetting{revision, clean},
+			},
+			want: "v0.0.0-20260808122403-f0b7c8384bac",
+		},
+		{
+			name: "clean checkout falls back to the short revision",
+			bi: &debug.BuildInfo{
+				Main:     debug.Module{Version: "(devel)"},
+				Settings: []debug.BuildSetting{revision, clean},
+			},
+			want: "60bc336",
+		},
+		{
+			name: "dirty checkout is marked",
+			bi: &debug.BuildInfo{
+				Main:     debug.Module{Version: "(devel)"},
+				Settings: []debug.BuildSetting{revision, dirty},
+			},
+			want: "60bc336-dirty",
+		},
+		{
+			name: "short revision is not truncated",
+			bi: &debug.BuildInfo{
+				Settings: []debug.BuildSetting{{Key: "vcs.revision", Value: "60bc"}, dirty},
+			},
+			want: "60bc-dirty",
+		},
+		{
+			name: "no version information at all",
+			bi:   &debug.BuildInfo{Main: debug.Module{Version: "(devel)"}},
+			want: devVersion,
+		},
 	}
-	v := Version()
-	if v == devVersion {
-		t.Fatalf("expected a vcs revision, got %q", v)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveVersion(tc.bi); got != tc.want {
+				t.Fatalf("expected %q, got %q", tc.want, got)
+			}
+		})
 	}
-	if len(strings.TrimSuffix(v, "-dirty")) != 7 {
-		t.Fatalf("expected a 7 character short revision, got %q", v)
+}
+
+func TestResolveDate(t *testing.T) {
+	bi := &debug.BuildInfo{Settings: []debug.BuildSetting{{Key: "vcs.time", Value: "2025-03-06T15:18:47Z"}}}
+	if got := resolveDate(bi); got != "2025-03-06T15:18:47Z" {
+		t.Fatalf("expected the vcs time, got %q", got)
+	}
+
+	if got := resolveDate(&debug.BuildInfo{}); got != unknownDate {
+		t.Fatalf("expected %q, got %q", unknownDate, got)
 	}
 }
 
