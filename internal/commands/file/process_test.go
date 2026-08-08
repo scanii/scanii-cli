@@ -9,7 +9,7 @@ import (
 
 func TestFsWalkerSingleFile(t *testing.T) {
 	var visited []string
-	err := fsWalker(fakeMalwareSample, false, func(path string, d os.DirEntry) {
+	_, err := fsWalker(fakeMalwareSample, false, func(path string, d os.FileInfo) {
 		visited = append(visited, d.Name())
 	})
 	if err != nil {
@@ -41,7 +41,7 @@ func TestFsWalkerDirectory(t *testing.T) {
 	}
 
 	var visited []string
-	err := fsWalker(dir, false, func(path string, d os.DirEntry) {
+	_, err := fsWalker(dir, false, func(path string, d os.FileInfo) {
 		visited = append(visited, d.Name())
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func TestFsWalkerSkipsDirectories(t *testing.T) {
 	}
 
 	var visited []string
-	err := fsWalker(dir, false, func(path string, d os.DirEntry) {
+	_, err := fsWalker(dir, false, func(path string, d os.FileInfo) {
 		visited = append(visited, d.Name())
 		if d.IsDir() {
 			t.Fatalf("handler should not be called with directory, got %s", d.Name())
@@ -77,7 +77,7 @@ func TestFsWalkerSkipsDirectories(t *testing.T) {
 }
 
 func TestFsWalkerNonExistentPath(t *testing.T) {
-	err := fsWalker("/tmp/does_not_exist_at_all", false, func(path string, d os.DirEntry) {
+	_, err := fsWalker("/tmp/does_not_exist_at_all", false, func(path string, d os.FileInfo) {
 		t.Fatal("should not be called")
 	})
 	if err == nil {
@@ -96,7 +96,7 @@ func TestFsWalkerPassesFilePath(t *testing.T) {
 	}
 
 	var paths []string
-	err := fsWalker(dir, false, func(path string, d os.DirEntry) {
+	_, err := fsWalker(dir, false, func(path string, d os.FileInfo) {
 		paths = append(paths, path)
 	})
 	if err != nil {
@@ -131,7 +131,7 @@ func TestFsWalkerIgnoreHidden(t *testing.T) {
 	}
 
 	var visited []string
-	err := fsWalker(dir, true, func(path string, d os.DirEntry) {
+	_, err := fsWalker(dir, true, func(path string, d os.FileInfo) {
 		visited = append(visited, d.Name())
 	})
 	if err != nil {
@@ -170,7 +170,7 @@ func TestFsWalkerIgnoreHiddenDotfiles(t *testing.T) {
 	}
 
 	var visited []string
-	err := fsWalker(dir, true, func(path string, d os.DirEntry) {
+	_, err := fsWalker(dir, true, func(path string, d os.FileInfo) {
 		visited = append(visited, d.Name())
 	})
 	if err != nil {
@@ -193,7 +193,7 @@ func TestFsWalkerIgnoreHiddenSingleFile(t *testing.T) {
 	}
 
 	var visited []string
-	err := fsWalker(hiddenFile, true, func(path string, d os.DirEntry) {
+	_, err := fsWalker(hiddenFile, true, func(path string, d os.FileInfo) {
 		visited = append(visited, d.Name())
 	})
 	if err != nil {
@@ -214,7 +214,7 @@ func TestFsWalkerIncludeHidden(t *testing.T) {
 	}
 
 	var visited []string
-	err := fsWalker(dir, false, func(path string, d os.DirEntry) {
+	_, err := fsWalker(dir, false, func(path string, d os.FileInfo) {
 		visited = append(visited, d.Name())
 	})
 	if err != nil {
@@ -223,5 +223,55 @@ func TestFsWalkerIncludeHidden(t *testing.T) {
 	sort.Strings(visited)
 	if len(visited) != 2 {
 		t.Fatalf("expected 2 files, got %d: %v", len(visited), visited)
+	}
+}
+
+func TestFsWalkerSkipsEmptyFiles(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "content.txt"), []byte("test"), 0600); err != nil {
+		t.Fatalf("failed to create file: %s", err)
+	}
+	for _, name := range []string{"empty1.txt", "empty2.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, name), nil, 0600); err != nil {
+			t.Fatalf("failed to create file: %s", err)
+		}
+	}
+
+	var visited []string
+	emptyFiles, err := fsWalker(dir, false, func(path string, d os.FileInfo) {
+		visited = append(visited, d.Name())
+	})
+	if err != nil {
+		t.Fatalf("fsWalker failed: %s", err)
+	}
+
+	// empty content is rejected by the API, so it never leaves the machine
+	if len(visited) != 1 || visited[0] != "content.txt" {
+		t.Fatalf("expected only content.txt, got %v", visited)
+	}
+	if emptyFiles != 2 {
+		t.Fatalf("expected 2 empty files reported, got %d", emptyFiles)
+	}
+}
+
+func TestFsWalkerSkipsEmptySingleFile(t *testing.T) {
+	dir := t.TempDir()
+	empty := filepath.Join(dir, "empty.txt")
+	if err := os.WriteFile(empty, nil, 0600); err != nil {
+		t.Fatalf("failed to create file: %s", err)
+	}
+
+	var visited []string
+	emptyFiles, err := fsWalker(empty, false, func(path string, d os.FileInfo) {
+		visited = append(visited, d.Name())
+	})
+	if err != nil {
+		t.Fatalf("fsWalker failed: %s", err)
+	}
+	if len(visited) != 0 {
+		t.Fatalf("expected no files, got %v", visited)
+	}
+	if emptyFiles != 1 {
+		t.Fatalf("expected 1 empty file reported, got %d", emptyFiles)
 	}
 }

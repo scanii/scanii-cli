@@ -2,7 +2,9 @@ package file
 
 import (
 	"context"
+	"os"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -25,7 +27,7 @@ func TestServiceProcessSyncSingleFile(t *testing.T) {
 	var results []resultRecord
 	var mu sync.Mutex
 
-	err := svc.process(context.Background(), stream, 1, "", false, map[string]string{"m1": "v1"}, func(r resultRecord) {
+	err := svc.process(context.Background(), stream, processOptions{maxConcurrency: 1, metadata: map[string]string{"m1": "v1"}}, func(r resultRecord) {
 		mu.Lock()
 		results = append(results, r)
 		mu.Unlock()
@@ -58,7 +60,7 @@ func TestServiceProcessAsyncSingleFile(t *testing.T) {
 	var results []resultRecord
 	var mu sync.Mutex
 
-	err := svc.process(context.Background(), stream, 1, "", true, map[string]string{"m1": "v1"}, func(r resultRecord) {
+	err := svc.process(context.Background(), stream, processOptions{maxConcurrency: 1, async: true, metadata: map[string]string{"m1": "v1"}}, func(r resultRecord) {
 		mu.Lock()
 		results = append(results, r)
 		mu.Unlock()
@@ -95,7 +97,7 @@ func TestServiceProcessMultipleFiles(t *testing.T) {
 	var results []resultRecord
 	var mu sync.Mutex
 
-	err := svc.process(context.Background(), stream, 2, "", false, nil, func(r resultRecord) {
+	err := svc.process(context.Background(), stream, processOptions{maxConcurrency: 2}, func(r resultRecord) {
 		mu.Lock()
 		results = append(results, r)
 		mu.Unlock()
@@ -126,7 +128,7 @@ func TestServiceProcessNonExistentFile(t *testing.T) {
 	var results []resultRecord
 	var mu sync.Mutex
 
-	err := svc.process(context.Background(), stream, 1, "", false, nil, func(r resultRecord) {
+	err := svc.process(context.Background(), stream, processOptions{maxConcurrency: 1}, func(r resultRecord) {
 		mu.Lock()
 		results = append(results, r)
 		mu.Unlock()
@@ -155,7 +157,7 @@ func TestServiceRetrieve(t *testing.T) {
 	var results []resultRecord
 	var mu sync.Mutex
 
-	err := svc.process(context.Background(), stream, 1, "", false, map[string]string{"m1": "v1"}, func(r resultRecord) {
+	err := svc.process(context.Background(), stream, processOptions{maxConcurrency: 1, metadata: map[string]string{"m1": "v1"}}, func(r resultRecord) {
 		mu.Lock()
 		results = append(results, r)
 		mu.Unlock()
@@ -191,7 +193,7 @@ func TestServiceRetrieveAsync(t *testing.T) {
 	var results []resultRecord
 	var mu sync.Mutex
 
-	err := svc.process(context.Background(), stream, 1, "", true, map[string]string{"m1": "v1"}, func(r resultRecord) {
+	err := svc.process(context.Background(), stream, processOptions{maxConcurrency: 1, async: true, metadata: map[string]string{"m1": "v1"}}, func(r resultRecord) {
 		mu.Lock()
 		results = append(results, r)
 		mu.Unlock()
@@ -211,4 +213,42 @@ func TestServiceRetrieveAsync(t *testing.T) {
 	}
 
 	checkResponseContent(t, retrieved)
+}
+
+func TestServiceProcessReportsUploadedBytes(t *testing.T) {
+	svc := newTestService(t)
+
+	stream := make(chan string, 1)
+	stream <- fakeMalwareSample
+	close(stream)
+
+	var reported atomic.Uint64
+	var results []resultRecord
+	var mu sync.Mutex
+
+	err := svc.process(context.Background(), stream, processOptions{
+		maxConcurrency: 1,
+		onBytes:        func(n uint64) { reported.Add(n) },
+	}, func(r resultRecord) {
+		mu.Lock()
+		results = append(results, r)
+		mu.Unlock()
+	})
+	if err != nil {
+		t.Fatalf("process failed: %s", err)
+	}
+
+	info, err := os.Stat(fakeMalwareSample)
+	if err != nil {
+		t.Fatalf("failed to stat sample: %s", err)
+	}
+
+	// every byte of the file is reported exactly once, which is what makes the
+	// progress bar track the upload rather than guessing at it
+	if got, want := reported.Load(), uint64(info.Size()); got != want { //nolint:gosec
+		t.Fatalf("expected %d bytes reported, got %d", want, got)
+	}
+	if len(results) != 1 || results[0].err != nil {
+		t.Fatalf("expected one successful result, got %+v", results)
+	}
 }

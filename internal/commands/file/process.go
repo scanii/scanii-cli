@@ -105,11 +105,7 @@ func process(
 
 	if info.IsDir() {
 		isDirectory = true
-		err = fsWalker(path, ignoreHidden, func(_ string, it os.DirEntry) {
-			fi, err := it.Info()
-			if err != nil {
-				return
-			}
+		emptyFiles, err := fsWalker(path, ignoreHidden, func(_ string, fi os.FileInfo) {
 			bytesTotal += uint64(fi.Size()) //nolint:gosec
 			filesTotal++
 		})
@@ -118,10 +114,20 @@ func process(
 			return fmt.Errorf("failed to walk directory: %w", err)
 		}
 		terminal.Info(fmt.Sprintf("Processing recursive directory %s with ~%s files | ~%s", path, terminal.FormatNumber(int64(filesTotal)), terminal.FormatBytes(bytesTotal))) //nolint:gosec
+		if emptyFiles > 0 {
+			terminal.Info(fmt.Sprintf("Skipping %s empty file(s)", terminal.FormatNumber(int64(emptyFiles))))
+		}
 	} else {
 		if ignoreHidden && strings.HasPrefix(filepath.Base(path), ".") {
 			slog.Debug("ignoring hidden file", "path", path)
 			terminal.Info(fmt.Sprintf("Skipping hidden file %s", path))
+			return nil
+		}
+		// the API rejects empty content with a 400, so there is nothing to learn
+		// from sending it
+		if info.Size() == 0 {
+			slog.Debug("ignoring empty file", "path", path)
+			terminal.Info(fmt.Sprintf("Skipping empty file %s", path))
 			return nil
 		}
 		filesTotal = 1
@@ -131,7 +137,7 @@ func process(
 
 	fileChannel := make(chan string)
 	go func() {
-		err = fsWalker(path, ignoreHidden, func(filePath string, _ os.DirEntry) {
+		_, err := fsWalker(path, ignoreHidden, func(filePath string, _ os.FileInfo) {
 			filesStarted.Add(1)
 			fileChannel <- filePath
 		})
@@ -142,11 +148,28 @@ func process(
 		close(fileChannel)
 	}()
 
-	bytesProcessed := uint64(0)
+	// a directory run only reports counts while it works, so the files that
+	// actually carry findings are collected and listed at the end
+	findings := &findingsReport{}
+
+	// Progress is measured in bytes handed to the transport rather than in files
+	// completed, so that a single large file — or a directory of a few of them —
+	// advances smoothly instead of flipping from 0 to 100%.
+	tracker := newProgressTracker(ctx, isDirectory, filesTotal, bytesTotal, filepath.Base(path))
+	defer tracker.stop()
 
 	startTime := time.Now()
 	fs, err := newService(p)
-	err = fs.process(ctx, fileChannel, concurrencyLimit, callback, async, metadata, func(result resultRecord) {
+	if err != nil {
+		return fmt.Errorf("failed to create service: %w", err)
+	}
+	err = fs.process(ctx, fileChannel, processOptions{
+		maxConcurrency: concurrencyLimit,
+		callback:       callback,
+		async:          async,
+		metadata:       metadata,
+		onBytes:        tracker.addBytes,
+	}, func(result resultRecord) {
 		if result.err != nil {
 			slog.Error("failed to process file", "file", result.path, "error", result.err)
 			filesFailed.Add(1)
@@ -154,17 +177,15 @@ func process(
 			filesFinished.Add(1)
 		}
 
-		// increment bytes processed
-		bytesProcessed += result.contentLength
 		if len(result.findings) > 0 {
 			filesWithFindings.Add(1)
+			findings.add(&result)
 		}
 		if isDirectory {
 			slog.Debug("progress", "files_started", filesStarted.Load(), "files_finished", filesFinished.Load(), "files_failed", filesFailed.Load(), "files_with_findings", filesWithFindings.Load(), "total_files", filesTotal)
-			if !slog.Default().Enabled(ctx, slog.LevelDebug) {
-				terminal.ProgressBar("Files", filesFinished.Load()+filesFailed.Load(), filesTotal)
-			}
+			tracker.fileDone(filesFinished.Load() + filesFailed.Load())
 		} else {
+			tracker.stop()
 			printFileResult(&result)
 		}
 
@@ -172,8 +193,19 @@ func process(
 	if err != nil {
 		return err
 	}
+	tracker.stop()
 	elapsed := time.Since(startTime)
 	throughput := float64(bytesTotal) / elapsed.Seconds()
+
+	// a single file has already printed its own result above
+	if isDirectory {
+		if withFindings := findings.sorted(); len(withFindings) > 0 {
+			terminal.Section("Files with findings")
+			for i := range withFindings {
+				printFileResult(&withFindings[i])
+			}
+		}
+	}
 
 	fmt.Println()
 	terminal.Success(fmt.Sprintf("Completed in %s, %s file(s) analyzed. Throughput %s/s", terminal.FormatDuration(elapsed), terminal.FormatNumber(int64(filesFinished.Load())), terminal.FormatBytes(uint64(throughput)))) //nolint:gosec
@@ -182,8 +214,11 @@ func process(
 	return nil
 }
 
-func fsWalker(root string, ignoreHidden bool, handler func(path string, d os.DirEntry)) error {
-	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+// fsWalker calls handler for every file under root that is worth sending for
+// analysis, and reports how many empty files it skipped along the way. Empty
+// content is rejected by the API with a 400, so uploading it only buys an error.
+func fsWalker(root string, ignoreHidden bool, handler func(path string, info os.FileInfo)) (emptyFiles int, err error) {
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -194,9 +229,25 @@ func fsWalker(root string, ignoreHidden bool, handler func(path string, d os.Dir
 			slog.Debug("ignoring hidden file", "path", path)
 			return nil
 		}
-		if !d.IsDir() {
-			handler(path, d)
+		if d.IsDir() {
+			return nil
 		}
+
+		info, err := d.Info()
+		if err != nil {
+			// a file we cannot stat is one we cannot size or open; the walk
+			// carries on rather than failing the whole run over it
+			slog.Debug("ignoring unreadable file", "path", path, "error", err)
+			return nil
+		}
+		if info.Size() == 0 {
+			slog.Debug("ignoring empty file", "path", path)
+			emptyFiles++
+			return nil
+		}
+
+		handler(path, info)
 		return nil
 	})
+	return emptyFiles, err
 }

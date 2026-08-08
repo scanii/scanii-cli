@@ -6,7 +6,7 @@ The Scanii CLI (`sc`) helps you build, test, and manage your [Scanii](https://ww
 
 - Interact with the Scanii API: scan files, manage auth tokens, and check account info
 - Start a local server that simulates the Scanii API for integration testing
-- Process entire directories of files with concurrent workers and progress tracking
+- Process single files or entire directories with concurrent workers and byte-level upload progress
 
 ## Installation
 
@@ -86,6 +86,37 @@ Synchronous scan (blocks until the result is ready):
 sc files process /path/to/file.pdf
 ```
 
+Progress is measured in bytes as they go out on the wire, so a large file
+advances smoothly while it uploads:
+
+```
+Using endpoint: api-us1.scanii.com and API key: mykey
+Processing file /path/to/backup.tar
+Uploading backup.tar  [█████████████████░░░░░░░░░░░░░]  58% (183.2 MB/314.6 MB)
+```
+
+Once the last byte is sent, the wait is on the server, so the bar gives way to a
+spinner until the result lands:
+
+```
+⠹ Analyzing backup.tar
+```
+
+```
+# /path/to/backup.tar:
+
+  id:             ff03467da11f417aa99845c91793ce0c
+  checksum/sha1:  0c4f4f069728d13bf481738ac926381477fb8975
+  content type:   application/octet-stream
+  content length:  314.6 MB
+  creation date:   Sat, 08 Aug 2026 08:41:43 EDT
+  findings:       none
+  metadata:       none
+
+✔ Completed in 4.2 s, 1 file(s) analyzed. Throughput 74.9 MB/s
+✔ Files with findings: 0, unable to process: 0 and successfully processed: 1
+```
+
 Asynchronous scan (returns immediately with a pending result ID):
 
 ```shell
@@ -132,29 +163,45 @@ Skip hidden files and attach metadata:
 sc files process --ignore-hidden --metadata env=production,scan_type=nightly /path/to/directory
 ```
 
-Example output:
+Empty files are skipped rather than uploaded — the API rejects empty content, so
+sending it only buys a `400` — and the CLI reports how many it passed over:
 
 ```
-Using endpoint: localhost:4000 and API key: key
-success in 4.4ms
-Credentials worked against http://localhost:4000/v2.2/
-Processing directory:  .
-Found 39 file(s)
-Processing files 100% |████████████████████████████████████████| (39/39, 918 it/s)
+Processing recursive directory /path/to/directory with ~12 files | ~50.3 MB
+Skipping 3 empty file(s)
+```
 
-Completed in 150ms
-Files with findings: 4, unable to process: 0 and successfully processed: 39
-Files with findings:
-------
-  path:           samples/eicar.txt
-  id:             fd33128a8da445d3b8308fe6d1588829
-  checksum/sah1:  3395856ce81f2b7382dee72602f798b642f14140
+Directories are tracked the same way. The bar fills with the bytes uploaded so
+far across every file, and the label counts the files that have come back:
+
+```
+Using endpoint: api-us1.scanii.com and API key: mykey
+Processing recursive directory /path/to/directory with ~12 files | ~50.3 MB
+Files 7/12  [████████████████████████░░░░░░░░░░░░░░░░░░]  58% (29.7 MB/50.3 MB)
+```
+
+On completion, any file that came back with findings is listed, so a directory
+scan tells you *where* the malware was and not just how much of it there was:
+
+```
+Using endpoint: api-us1.scanii.com and API key: mykey
+Processing recursive directory /path/to/directory with ~12 files | ~50.3 MB
+Files 12/12  [████████████████████████████████████████]  100% (50.3 MB/50.3 MB)
+
+## Files with findings
+
+# /path/to/directory/quarantine/sample.txt:
+
+  id:             e353d97476fe40c6abd20418efe82b96
+  checksum/sha1:  7da9d3b0c68b1d0543acb65af4220a4745607557
   content type:   text/plain; charset=utf-8
-  content length: 68 B
-  creation date:  2024-02-08T13:38:02.074502Z
+  content length:  36 B
+  creation date:   Sat, 08 Aug 2026 09:07:46 EDT
   findings:       content.malicious.eicar-test-signature
   metadata:       none
-------
+
+✔ Completed in 3.1 s, 12 file(s) analyzed. Throughput 16.2 MB/s
+✔ Files with findings: 1, unable to process: 0 and successfully processed: 12
 ```
 
 ### 6. Manage auth tokens
