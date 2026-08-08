@@ -144,9 +144,24 @@ func process(
 
 	bytesProcessed := uint64(0)
 
+	// Progress is measured in bytes handed to the transport rather than in files
+	// completed, so that a single large file — or a directory of a few of them —
+	// advances smoothly instead of flipping from 0 to 100%.
+	tracker := newProgressTracker(ctx, isDirectory, filesTotal, bytesTotal, filepath.Base(path))
+	defer tracker.stop()
+
 	startTime := time.Now()
 	fs, err := newService(p)
-	err = fs.process(ctx, fileChannel, concurrencyLimit, callback, async, metadata, func(result resultRecord) {
+	if err != nil {
+		return fmt.Errorf("failed to create service: %w", err)
+	}
+	err = fs.process(ctx, fileChannel, processOptions{
+		maxConcurrency: concurrencyLimit,
+		callback:       callback,
+		async:          async,
+		metadata:       metadata,
+		onBytes:        tracker.addBytes,
+	}, func(result resultRecord) {
 		if result.err != nil {
 			slog.Error("failed to process file", "file", result.path, "error", result.err)
 			filesFailed.Add(1)
@@ -161,10 +176,9 @@ func process(
 		}
 		if isDirectory {
 			slog.Debug("progress", "files_started", filesStarted.Load(), "files_finished", filesFinished.Load(), "files_failed", filesFailed.Load(), "files_with_findings", filesWithFindings.Load(), "total_files", filesTotal)
-			if !slog.Default().Enabled(ctx, slog.LevelDebug) {
-				terminal.ProgressBar("Files", filesFinished.Load()+filesFailed.Load(), filesTotal)
-			}
+			tracker.fileDone(filesFinished.Load() + filesFailed.Load())
 		} else {
+			tracker.stop()
 			printFileResult(&result)
 		}
 
@@ -172,6 +186,7 @@ func process(
 	if err != nil {
 		return err
 	}
+	tracker.stop()
 	elapsed := time.Since(startTime)
 	throughput := float64(bytesTotal) / elapsed.Seconds()
 

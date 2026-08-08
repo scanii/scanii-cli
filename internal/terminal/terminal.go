@@ -228,35 +228,45 @@ func ReadLine(prompt string) string {
 
 // ProgressBar displays a progress bar. In TTY mode it overwrites the current line.
 // In non-TTY mode it only prints the final line when current == total.
-// Silently returns when total <= 0.
+// Silently returns when total is 0.
 func ProgressBar(label string, current, total uint64) {
-	if total <= 0 {
+	if total == 0 {
 		return
 	}
+	current = min(current, total)
+	stats := fmt.Sprintf("%d%% (%d/%d)", percentOf(current, total), current, total)
+	renderProgress(label, current, total, stats, current >= total)
+}
 
-	percent := int(float64(current) / float64(total) * 100)
-	stats := fmt.Sprintf("%d%% (%d/%d)", percent, current, total)
-
+// renderProgress draws a single frame of a progress bar. In TTY mode it
+// overwrites the current line, terminating it when final is set. In non-TTY
+// mode it prints one line, and only when final is set.
+func renderProgress(label string, current, total uint64, stats string, final bool) {
 	if !IsTTY() {
-		if current == total {
+		if final {
 			_, _ = fmt.Fprintf(stdout, "%s %s\n", label, stats)
 		}
 		return
 	}
 
 	termWidth := getTerminalWidth()
-	barWidth := termWidth - len(label) - len(stats) - 7 // 7 chars for spaces and brackets
-	if barWidth < 10 {
-		barWidth = 10
-	}
+	barWidth := max(termWidth-len(label)-len(stats)-7, 10) // 7 chars for spaces and brackets
 
 	filled := int(float64(current) / float64(total) * float64(barWidth))
 	bar := strings.Repeat(string(blockFilled), filled) + strings.Repeat(string(blockEmpty), barWidth-filled)
 
-	_, _ = fmt.Fprintf(stdout, "\r%s  [%s]  %s", label, bar, stats)
-	if current == total {
+	// clear to end of line so a shrinking label does not leave a tail behind
+	_, _ = fmt.Fprintf(stdout, "\r\033[2K%s  [%s]  %s", label, bar, stats)
+	if final {
 		_, _ = fmt.Fprintln(stdout)
 	}
+}
+
+func percentOf(current, total uint64) int {
+	if total == 0 {
+		return 0
+	}
+	return int(float64(current) / float64(total) * 100)
 }
 
 // Spinner displays an animated braille spinner with a message.

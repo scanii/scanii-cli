@@ -31,6 +31,34 @@ func newService(profile *profile.Profile) (*service, error) {
 
 type consumer func(record resultRecord)
 
+// processOptions carries the per-run settings for service.process.
+type processOptions struct {
+	maxConcurrency int
+	callback       string
+	async          bool
+	metadata       map[string]string
+	// onBytes, when set, is called with the number of file bytes handed to the
+	// HTTP transport. It is called from one goroutine per in-flight file.
+	onBytes func(n uint64)
+}
+
+// progressReader reports bytes as they are read. The request body is an io.Pipe
+// drained by the HTTP transport, so a read only advances once the previous chunk
+// has been written to the wire — which makes this an upload progress signal
+// rather than a read-ahead count.
+type progressReader struct {
+	reader  io.Reader
+	onBytes func(n uint64)
+}
+
+func (p *progressReader) Read(b []byte) (int, error) {
+	n, err := p.reader.Read(b)
+	if n > 0 {
+		p.onBytes(uint64(n)) //nolint:gosec
+	}
+	return n, err
+}
+
 func (s *service) retrieve(ctx context.Context, id string) (*resultRecord, error) {
 	resp, err := s.client.RetrieveFile(ctx, id)
 	if err != nil {
@@ -55,10 +83,10 @@ func (s *service) retrieve(ctx context.Context, id string) (*resultRecord, error
 
 // process is the main function that processes the files in the stream
 // an error is returned only in catastrophic situations, individual file errors are recorded in the resultRecord and passed to the consumer for handling
-func (s *service) process(ctx context.Context, stream chan string, maxConcurrency int, callback string, async bool, metadata map[string]string, consumer consumer) error {
+func (s *service) process(ctx context.Context, stream chan string, opts processOptions, consumer consumer) error {
 
 	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(maxConcurrency)
+	g.SetLimit(opts.maxConcurrency)
 
 	for path := range stream {
 		g.Go(func() error {
@@ -89,6 +117,9 @@ func (s *service) process(ctx context.Context, stream chan string, maxConcurrenc
 
 				sha1 := sha1hash.New() //nolint:gosec
 				fdAndShaReader := io.TeeReader(fd, sha1)
+				if opts.onBytes != nil {
+					fdAndShaReader = &progressReader{reader: fdAndShaReader, onBytes: opts.onBytes}
+				}
 
 				sendErr := func(prefix string, err error) {
 					_ = pipeWriter.CloseWithError(err)
@@ -106,15 +137,15 @@ func (s *service) process(ctx context.Context, stream chan string, maxConcurrenc
 					return
 				}
 
-				for k, v := range metadata {
+				for k, v := range opts.metadata {
 					if err = mpb.WriteField(fmt.Sprintf("metadata[%s]", k), v); err != nil {
 						sendErr("write metadata", err)
 						return
 					}
 				}
 
-				if callback != "" {
-					if err = mpb.WriteField("callback", callback); err != nil {
+				if opts.callback != "" {
+					if err = mpb.WriteField("callback", opts.callback); err != nil {
 						sendErr("write callback", err)
 						return
 					}
@@ -151,7 +182,7 @@ func (s *service) process(ctx context.Context, stream chan string, maxConcurrenc
 				return true
 			}
 
-			if async {
+			if opts.async {
 				result, err := s.client.ProcessFileAsync(ctx, contentType, pipeReader)
 				if err != nil {
 					_ = pipeWriter.CloseWithError(err)
