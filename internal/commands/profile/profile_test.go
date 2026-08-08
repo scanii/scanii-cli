@@ -1,12 +1,20 @@
 package profile
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/uvasoftware/scanii-cli/internal/buildinfo"
 )
 
 func TestSaveAndLoadConfig(t *testing.T) {
@@ -339,6 +347,44 @@ func TestJsonFormat(t *testing.T) {
 	}
 	if parsed["version"] != nil {
 		t.Fatalf("expected version to be null, got %v", parsed["version"])
+	}
+}
+
+func TestClientSendsUserAgent(t *testing.T) {
+	var got string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.UserAgent()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"message":"pong","key":"testkey"}`))
+	}))
+	defer server.Close()
+
+	// the localhost prefix is what makes Client() use http instead of https
+	addr, ok := server.Listener.Addr().(*net.TCPAddr)
+	if !ok {
+		t.Fatalf("expected a tcp listener, got %T", server.Listener.Addr())
+	}
+
+	c := &Profile{
+		Credentials: "testkey:testsecret",
+		Endpoint:    fmt.Sprintf("localhost:%d", addr.Port),
+	}
+
+	apiClient, err := c.Client()
+	if err != nil {
+		t.Fatalf("failed to create client: %s", err)
+	}
+
+	if _, err := apiClient.Ping(context.Background()); err != nil {
+		t.Fatalf("failed to ping: %s", err)
+	}
+
+	if got != buildinfo.UserAgent() {
+		t.Fatalf("expected user agent %q, got %q", buildinfo.UserAgent(), got)
+	}
+	// regression guard for https://github.com/scanii/scanii-cli/issues/85
+	if strings.TrimPrefix(strings.SplitN(got, " ", 2)[0], "scanii-cli/") == "" {
+		t.Fatalf("expected a non-empty version in the user agent, got %q", got)
 	}
 }
 
