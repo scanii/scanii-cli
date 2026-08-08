@@ -163,6 +163,14 @@ Skip hidden files and attach metadata:
 sc files process --ignore-hidden --metadata env=production,scan_type=nightly /path/to/directory
 ```
 
+Empty files are skipped rather than uploaded — the API rejects empty content, so
+sending it only buys a `400` — and the CLI reports how many it passed over:
+
+```
+Processing recursive directory /path/to/directory with ~12 files | ~50.3 MB
+Skipping 3 empty file(s)
+```
+
 Directories are tracked the same way. The bar fills with the bytes uploaded so
 far across every file, and the label counts the files that have come back:
 

@@ -105,11 +105,7 @@ func process(
 
 	if info.IsDir() {
 		isDirectory = true
-		err = fsWalker(path, ignoreHidden, func(_ string, it os.DirEntry) {
-			fi, err := it.Info()
-			if err != nil {
-				return
-			}
+		emptyFiles, err := fsWalker(path, ignoreHidden, func(_ string, fi os.FileInfo) {
 			bytesTotal += uint64(fi.Size()) //nolint:gosec
 			filesTotal++
 		})
@@ -118,10 +114,20 @@ func process(
 			return fmt.Errorf("failed to walk directory: %w", err)
 		}
 		terminal.Info(fmt.Sprintf("Processing recursive directory %s with ~%s files | ~%s", path, terminal.FormatNumber(int64(filesTotal)), terminal.FormatBytes(bytesTotal))) //nolint:gosec
+		if emptyFiles > 0 {
+			terminal.Info(fmt.Sprintf("Skipping %s empty file(s)", terminal.FormatNumber(int64(emptyFiles))))
+		}
 	} else {
 		if ignoreHidden && strings.HasPrefix(filepath.Base(path), ".") {
 			slog.Debug("ignoring hidden file", "path", path)
 			terminal.Info(fmt.Sprintf("Skipping hidden file %s", path))
+			return nil
+		}
+		// the API rejects empty content with a 400, so there is nothing to learn
+		// from sending it
+		if info.Size() == 0 {
+			slog.Debug("ignoring empty file", "path", path)
+			terminal.Info(fmt.Sprintf("Skipping empty file %s", path))
 			return nil
 		}
 		filesTotal = 1
@@ -131,7 +137,7 @@ func process(
 
 	fileChannel := make(chan string)
 	go func() {
-		err = fsWalker(path, ignoreHidden, func(filePath string, _ os.DirEntry) {
+		_, err := fsWalker(path, ignoreHidden, func(filePath string, _ os.FileInfo) {
 			filesStarted.Add(1)
 			fileChannel <- filePath
 		})
@@ -197,8 +203,11 @@ func process(
 	return nil
 }
 
-func fsWalker(root string, ignoreHidden bool, handler func(path string, d os.DirEntry)) error {
-	return filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+// fsWalker calls handler for every file under root that is worth sending for
+// analysis, and reports how many empty files it skipped along the way. Empty
+// content is rejected by the API with a 400, so uploading it only buys an error.
+func fsWalker(root string, ignoreHidden bool, handler func(path string, info os.FileInfo)) (emptyFiles int, err error) {
+	err = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -209,9 +218,25 @@ func fsWalker(root string, ignoreHidden bool, handler func(path string, d os.Dir
 			slog.Debug("ignoring hidden file", "path", path)
 			return nil
 		}
-		if !d.IsDir() {
-			handler(path, d)
+		if d.IsDir() {
+			return nil
 		}
+
+		info, err := d.Info()
+		if err != nil {
+			// a file we cannot stat is one we cannot size or open; the walk
+			// carries on rather than failing the whole run over it
+			slog.Debug("ignoring unreadable file", "path", path, "error", err)
+			return nil
+		}
+		if info.Size() == 0 {
+			slog.Debug("ignoring empty file", "path", path)
+			emptyFiles++
+			return nil
+		}
+
+		handler(path, info)
 		return nil
 	})
+	return emptyFiles, err
 }
