@@ -13,7 +13,24 @@ The Scanii CLI (`sc`) helps you build, test, and manage your [Scanii](https://ww
 ### Homebrew (macOS, Linux)
 
 ```shell
+brew trust --formula scanii/tap/scanii-cli
 brew install scanii/tap/scanii-cli
+```
+
+From Homebrew 6.0, formulae in third-party taps must be trusted before Homebrew
+will load them, so without the first command the install fails with `Refusing to
+load formula scanii/tap/scanii-cli from untrusted tap scanii/tap`. Trust is
+recorded locally in `~/.homebrew/trust.json` — it is your decision to make, and
+nobody can grant it on your behalf. Use `brew trust scanii/tap` instead to trust
+everything in the tap rather than just this formula.
+
+`brew trust` prompts for nothing, so it drops straight into a CI script. It has
+existed since Homebrew 5.1.15; on anything older, skip it and just install.
+
+Trust persists, so upgrades need nothing extra:
+
+```shell
+brew upgrade scanii-cli
 ```
 
 ### Shell installer (macOS, Linux)
