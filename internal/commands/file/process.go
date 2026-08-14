@@ -136,6 +136,12 @@ func process(
 		bytesTotal += uint64(info.Size()) //nolint:gosec
 	}
 
+	// a walk that gives up part way through leaves files unvisited, which is a
+	// failure of the run rather than of any one file — counting it as a file
+	// would leave the count one ahead of the list of files that failed
+	var walkErr error
+	var walkMu sync.Mutex
+
 	fileChannel := make(chan string)
 	go func() {
 		_, err := fsWalker(path, ignoreHidden, func(filePath string, _ os.FileInfo) {
@@ -143,8 +149,10 @@ func process(
 			fileChannel <- filePath
 		})
 		if err != nil {
-			filesFailed.Add(1)
-			slog.Error("failed to walk directory", "error", err)
+			walkMu.Lock()
+			walkErr = err
+			walkMu.Unlock()
+			slog.Debug("failed to walk directory", "error", err)
 		}
 		close(fileChannel)
 	}()
@@ -239,7 +247,17 @@ func process(
 		terminal.Success(counts)
 	}
 
+	walkMu.Lock()
+	walked := walkErr
+	walkMu.Unlock()
+	if walked != nil {
+		terminal.Error(fmt.Sprintf("stopped reading %s, some files were never sent: %s", path, walked))
+	}
+
 	if filesFailed.Load() == 0 {
+		if walked != nil {
+			return fmt.Errorf("failed to read %s: %w", path, walked)
+		}
 		return nil
 	}
 
