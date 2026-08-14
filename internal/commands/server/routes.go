@@ -108,9 +108,11 @@ func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL st
 		})
 	}
 
-	// wrap wraps a handler func with the auth and headers middleware.
+	// wrap wraps a handler func with the auth and headers middleware. Headers go
+	// on the outside so that rejected requests carry a request id too — that id
+	// is the only handle a caller has on a failure.
 	wrap := func(h http.HandlerFunc) http.Handler {
-		return middleware(h, authMiddleware, headersMiddleware)
+		return middleware(h, headersMiddleware, authMiddleware)
 	}
 
 	// Static fixtures (unauthenticated) — used both by the CLI demo and

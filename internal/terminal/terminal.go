@@ -171,6 +171,24 @@ func List(items []string) {
 	}
 }
 
+// ClearLine erases the current line, so that a message can be printed over a
+// progress bar without leaving half a bar behind it. It is a no-op when output
+// is not a terminal, where there is no line to overwrite.
+func ClearLine() {
+	if !IsTTY() {
+		return
+	}
+	_, _ = fmt.Fprint(stdout, "\r\033[2K")
+}
+
+// ErrorList prints a numbered list of items to stderr, so that a list belonging
+// to an Error message stays on the same stream as its heading.
+func ErrorList(items []string) {
+	for i, item := range items {
+		_, _ = fmt.Fprintf(stderr, " %d. %s\n", i+1, item)
+	}
+}
+
 // Table prints an auto-aligned table with dim headers.
 func Table(headers []string, rows [][]string) {
 	cols := len(headers)

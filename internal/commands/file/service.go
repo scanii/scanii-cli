@@ -95,7 +95,7 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 
 			fd, err := os.Open(path)
 			if err != nil {
-				slog.Error("could not open file", "path", path, "error", err.Error())
+				slog.Debug("could not open file", "path", path, "error", err.Error())
 				r.err = err
 				consumer(r)
 				return nil
@@ -176,7 +176,7 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 				if res.err == nil {
 					return false
 				}
-				slog.Error("could not build multipart payload", "path", path, "error", res.err.Error())
+				slog.Debug("could not build multipart payload", "path", path, "error", res.err.Error())
 				r.err = res.err
 				consumer(r)
 				return true
@@ -190,7 +190,7 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 					if handleWriterError(writeRes) {
 						return nil
 					}
-					slog.Error("could not process file", "error", err.Error())
+					slog.Debug("could not process file", "path", path, "error", err.Error())
 					r.err = err
 					consumer(r)
 					return nil
@@ -202,8 +202,8 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 				}
 
 				if result.StatusCode != http.StatusAccepted {
-					slog.Debug("error processing file", "path", path, "status", result.StatusCode)
-					r.err = fmt.Errorf("error processing file %s, status code %d", path, result.StatusCode)
+					r.err = apiError(result.StatusCode, result.Header, result.Error)
+					slog.Debug("api error processing file", "path", path, "status", result.StatusCode, "error", r.err.Error())
 				} else {
 					r.id = *result.Pending.ID
 					r.location = result.Header.Get("Location")
@@ -218,7 +218,7 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 					if handleWriterError(writeRes) {
 						return nil
 					}
-					slog.Error("could not process file", "error", localErr.Error())
+					slog.Debug("could not process file", "path", path, "error", localErr.Error())
 					r.err = localErr
 					consumer(r)
 					return nil
@@ -235,8 +235,11 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 				slog.Debug("response", "status", result.StatusCode)
 
 				if result.StatusCode != http.StatusCreated {
-					slog.Debug("error processing file", "path", path, "status", result.StatusCode)
-					r.err = fmt.Errorf("error processing file %s, status code %d", path, result.StatusCode)
+					// there is no result to check the checksum against, and the
+					// error the API returned is the one worth reporting
+					r.err = apiError(result.StatusCode, result.Header, result.Error)
+					slog.Debug("api error processing file", "path", path, "status", result.StatusCode, "error", r.err.Error())
+					slog.Debug("skipping checksum verification, the api returned an error", "path", path)
 				} else {
 					pr := result.Result
 					r.id = *pr.ID
@@ -259,10 +262,18 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 						r.metadata = *pr.Metadata
 					}
 
-					if r.checksum != calculatedSha1 {
-						slog.Error("checksum mismatch", "expected", calculatedSha1, "actual", r.checksum)
-						r.err = fmt.Errorf("checksum mismatch, expected %s, actual %x", calculatedSha1, r.checksum)
-					} else {
+					// a comparison is only meaningful with both sides in hand —
+					// treating a missing checksum as a mismatch would fail a file
+					// the API accepted just fine
+					switch {
+					case r.checksum == "":
+						slog.Warn("no checksum in response, skipping verification", "path", path)
+					case calculatedSha1 == "":
+						slog.Warn("no locally calculated checksum, skipping verification", "path", path)
+					case r.checksum != calculatedSha1:
+						slog.Debug("checksum mismatch", "path", path, "expected", calculatedSha1, "actual", r.checksum)
+						r.err = fmt.Errorf("checksum mismatch, expected %s, actual %s", calculatedSha1, r.checksum)
+					default:
 						slog.Debug("checksum verified", "expected", calculatedSha1, "actual", r.checksum)
 					}
 				}

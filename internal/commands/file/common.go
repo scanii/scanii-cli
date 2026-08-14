@@ -1,12 +1,19 @@
 package file
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"strings"
 
+	"github.com/uvasoftware/scanii-cli/internal/client"
 	"github.com/uvasoftware/scanii-cli/internal/terminal"
 )
+
+// requestIDHeader carries the API's identifier for a single request, which is
+// what support needs to look a failure up on the server side.
+const requestIDHeader = "X-Scanii-Request-Id"
 
 type resultRecord struct {
 	path          string
@@ -19,6 +26,21 @@ type resultRecord struct {
 	contentLength uint64
 	creationDate  string
 	metadata      map[string]string
+}
+
+// apiError builds an error from a non-success API response, preferring the
+// message the API returned over the bare status code — "status 413: File is too
+// large" tells the caller what to do about it, "status code 413" does not. The
+// path is left out on purpose: every caller already knows which file it sent.
+func apiError(status int, header http.Header, apiErr *client.ErrorResponse) error {
+	msg := fmt.Sprintf("status %d", status)
+	if apiErr != nil && apiErr.Error != nil && *apiErr.Error != "" {
+		msg = fmt.Sprintf("%s: %s", msg, *apiErr.Error)
+	}
+	if id := header.Get(requestIDHeader); id != "" {
+		msg = fmt.Sprintf("%s (request id %s)", msg, id)
+	}
+	return errors.New(msg)
 }
 
 // extractMetadata parses the metadata string and returns a map of key/value pairs.

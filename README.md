@@ -221,6 +221,21 @@ Files 12/12  [██████████████████████
 ✔ Files with findings: 1, unable to process: 0 and successfully processed: 12
 ```
 
+Files the API rejected are reported as they happen, with the reason the API gave
+and the request id to quote in a support ticket. When more than a handful fail,
+the ones that scrolled past are listed again at the end of the run:
+
+```
+error: /path/to/directory/huge.iso — status 413: File is too large (request id req_9f3a1c)
+
+✔ Completed in 3.1 s, 11 file(s) analyzed. Throughput 16.2 MB/s
+warning: Files with findings: 1, unable to process: 1 and successfully processed: 11
+error: 1 of 12 file(s) could not be processed
+```
+
+`sc files process` and `sc files async` exit non-zero if any file could not be
+processed, so a scan that half-failed does not pass for a clean one in CI.
+
 ### 6. Manage auth tokens
 
 Create a short-lived auth token (default timeout: 300 seconds):
