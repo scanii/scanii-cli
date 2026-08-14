@@ -129,6 +129,16 @@ func TestList(t *testing.T) {
 	}
 }
 
+func TestErrorList(t *testing.T) {
+	out := captureErr(func() { ErrorList([]string{"a.txt — status 413", "b.txt — status 429"}) })
+	if !strings.Contains(out, "1. a.txt — status 413") {
+		t.Fatalf("expected first item, got %q", out)
+	}
+	if !strings.Contains(out, "2. b.txt — status 429") {
+		t.Fatalf("expected second item, got %q", out)
+	}
+}
+
 func TestTable(t *testing.T) {
 	out := captureOut(func() {
 		Table([]string{"NAME", "STATUS"}, [][]string{{"tok-1", "active"}, {"tok-2", "expired"}})

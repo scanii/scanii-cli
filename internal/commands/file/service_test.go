@@ -3,9 +3,13 @@ package file
 import (
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/uvasoftware/scanii-cli/internal/commands/profile"
 )
 
 func newTestService(t *testing.T) *service {
@@ -144,6 +148,85 @@ func TestServiceProcessNonExistentFile(t *testing.T) {
 	if results[0].err == nil {
 		t.Fatalf("expected an error for non-existent file")
 	}
+}
+
+// newTestServiceWithBadCredentials returns a service pointed at the mock server
+// with credentials it will reject, which is the cheapest way to drive a real API
+// error response — status, body and request id included.
+func newTestServiceWithBadCredentials(t *testing.T) *service {
+	t.Helper()
+	svc, err := newService(&profile.Profile{
+		CreatedAt:   time.Now(),
+		Credentials: "bad:credentials",
+		Endpoint:    ts.Endpoint,
+	})
+	if err != nil {
+		t.Fatalf("failed to create service: %s", err)
+	}
+	return svc
+}
+
+func TestServiceProcessAPIError(t *testing.T) {
+	run := func(t *testing.T, async bool) resultRecord {
+		t.Helper()
+		svc := newTestServiceWithBadCredentials(t)
+
+		stream := make(chan string, 1)
+		stream <- fakeMalwareSample
+		close(stream)
+
+		var results []resultRecord
+		var mu sync.Mutex
+
+		err := svc.process(context.Background(), stream, processOptions{maxConcurrency: 1, async: async}, func(r resultRecord) {
+			mu.Lock()
+			results = append(results, r)
+			mu.Unlock()
+		})
+		if err != nil {
+			t.Fatalf("process failed: %s", err)
+		}
+		if len(results) != 1 {
+			t.Fatalf("expected 1 result, got %d", len(results))
+		}
+		return results[0]
+	}
+
+	t.Run("sync", func(t *testing.T) {
+		r := run(t, false)
+
+		if r.err == nil {
+			t.Fatal("expected an error for a rejected request")
+		}
+		// the API's own message, not just the status code
+		if !strings.Contains(r.err.Error(), "401") || !strings.Contains(r.err.Error(), "could not authenticate") {
+			t.Fatalf("expected the api error message, got %q", r.err)
+		}
+		if !strings.Contains(r.err.Error(), "request id ") {
+			t.Fatalf("expected the request id in the error, got %q", r.err)
+		}
+		// a rejected file has no checksum to verify against
+		if strings.Contains(r.err.Error(), "checksum") {
+			t.Fatalf("expected no checksum verification on an api error, got %q", r.err)
+		}
+		if r.checksum != "" || r.id != "" {
+			t.Fatalf("expected an empty result, got checksum %q and id %q", r.checksum, r.id)
+		}
+	})
+
+	t.Run("async", func(t *testing.T) {
+		r := run(t, true)
+
+		if r.err == nil {
+			t.Fatal("expected an error for a rejected request")
+		}
+		if !strings.Contains(r.err.Error(), "401") || !strings.Contains(r.err.Error(), "could not authenticate") {
+			t.Fatalf("expected the api error message, got %q", r.err)
+		}
+		if r.id != "" || r.location != "" {
+			t.Fatalf("expected an empty result, got id %q and location %q", r.id, r.location)
+		}
+	})
 }
 
 func TestServiceRetrieve(t *testing.T) {

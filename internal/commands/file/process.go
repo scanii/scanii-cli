@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -135,6 +136,12 @@ func process(
 		bytesTotal += uint64(info.Size()) //nolint:gosec
 	}
 
+	// a walk that gives up part way through leaves files unvisited, which is a
+	// failure of the run rather than of any one file — counting it as a file
+	// would leave the count one ahead of the list of files that failed
+	var walkErr error
+	var walkMu sync.Mutex
+
 	fileChannel := make(chan string)
 	go func() {
 		_, err := fsWalker(path, ignoreHidden, func(filePath string, _ os.FileInfo) {
@@ -142,15 +149,23 @@ func process(
 			fileChannel <- filePath
 		})
 		if err != nil {
-			filesFailed.Add(1)
-			slog.Error("failed to walk directory", "error", err)
+			walkMu.Lock()
+			walkErr = err
+			walkMu.Unlock()
+			slog.Debug("failed to walk directory", "error", err)
 		}
 		close(fileChannel)
 	}()
 
 	// a directory run only reports counts while it works, so the files that
-	// actually carry findings are collected and listed at the end
+	// actually carry findings — and the ones that could not be processed at all —
+	// are collected and listed at the end
 	findings := &findingsReport{}
+	failures := &failureReport{}
+
+	// results arrive from one goroutine per in-flight file, and a failure is
+	// reported in two writes — clearing the progress bar, then the message
+	var reportMu sync.Mutex
 
 	// Progress is measured in bytes handed to the transport rather than in files
 	// completed, so that a single large file — or a directory of a few of them —
@@ -171,8 +186,22 @@ func process(
 		onBytes:        tracker.addBytes,
 	}, func(result resultRecord) {
 		if result.err != nil {
-			slog.Error("failed to process file", "file", result.path, "error", result.err)
-			filesFailed.Add(1)
+			slog.Debug("failed to process file", "file", result.path, "error", result.err)
+			failed := filesFailed.Add(1)
+			failures.add(&result)
+
+			// a long directory run should not keep the first error to itself
+			// until the very end — but nor should it scroll the summary away
+			if isDirectory && failed <= maxFailuresShownLive {
+				reportMu.Lock()
+				terminal.ClearLine()
+				terminal.Error(fmt.Sprintf("%s — %s", result.path, result.err))
+				if failed == maxFailuresShownLive {
+					terminal.ClearLine()
+					terminal.Warn("further errors are suppressed, see the summary at the end of the run")
+				}
+				reportMu.Unlock()
+			}
 		} else {
 			filesFinished.Add(1)
 		}
@@ -209,9 +238,69 @@ func process(
 
 	fmt.Println()
 	terminal.Success(fmt.Sprintf("Completed in %s, %s file(s) analyzed. Throughput %s/s", terminal.FormatDuration(elapsed), terminal.FormatNumber(int64(filesFinished.Load())), terminal.FormatBytes(uint64(throughput)))) //nolint:gosec
-	terminal.Success(fmt.Sprintf("Files with findings: %d, unable to process: %d and successfully processed: %d", filesWithFindings.Load(), filesFailed.Load(), filesFinished.Load()))
 
-	return nil
+	counts := fmt.Sprintf("Files with findings: %d, unable to process: %d and successfully processed: %d", filesWithFindings.Load(), filesFailed.Load(), filesFinished.Load())
+	if filesFailed.Load() > 0 {
+		// a green checkmark next to "unable to process: 6" reads as success
+		terminal.Warn(counts)
+	} else {
+		terminal.Success(counts)
+	}
+
+	walkMu.Lock()
+	walked := walkErr
+	walkMu.Unlock()
+	if walked != nil {
+		terminal.Error(fmt.Sprintf("stopped reading %s, some files were never sent: %s", path, walked))
+	}
+
+	if filesFailed.Load() == 0 {
+		if walked != nil {
+			return fmt.Errorf("failed to read %s: %w", path, walked)
+		}
+		return nil
+	}
+
+	// a single file has already printed its own error above, and a directory run
+	// short enough to have reported every failure as it went does not need to
+	// repeat itself — the list is for the runs where they scrolled away
+	if isDirectory && filesFailed.Load() > maxFailuresShownLive {
+		printFailures(failures.sorted())
+	}
+
+	return fmt.Errorf("%d of %d file(s) could not be processed", filesFailed.Load(), filesTotal)
+}
+
+const (
+	// maxFailuresShownLive bounds how many failures are reported while a
+	// directory run is still going.
+	maxFailuresShownLive = 10
+
+	// maxFailuresListed bounds the end-of-run failure list. A directory where
+	// every file was rejected should not scroll the summary off the screen.
+	maxFailuresListed = 25
+)
+
+// printFailures lists the files a run could not process, with the reason for
+// each, so that they can be retried without re-reading the whole log.
+func printFailures(failed []resultRecord) {
+	if len(failed) == 0 {
+		return
+	}
+
+	fmt.Println()
+	terminal.Error(fmt.Sprintf("%s file(s) could not be processed:", terminal.FormatNumber(int64(len(failed))))) //nolint:gosec
+
+	listed := min(len(failed), maxFailuresListed)
+	items := make([]string, 0, listed)
+	for i := range failed[:listed] {
+		items = append(items, fmt.Sprintf("%s — %s", failed[i].path, failed[i].err))
+	}
+	terminal.ErrorList(items)
+
+	if remaining := len(failed) - listed; remaining > 0 {
+		terminal.Error(fmt.Sprintf("…and %s more", terminal.FormatNumber(int64(remaining)))) //nolint:gosec
+	}
 }
 
 // fsWalker calls handler for every file under root that is worth sending for

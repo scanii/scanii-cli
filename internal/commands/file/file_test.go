@@ -3,7 +3,10 @@ package file
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"testing"
+
+	"github.com/uvasoftware/scanii-cli/internal/client"
 )
 
 // checkResponseContent checks that the result is the expected sample test file
@@ -112,6 +115,33 @@ func TestCallFileRetrieveEmptyID(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected error for empty id")
 	}
+}
+
+func TestAPIError(t *testing.T) {
+	message := "File is too large"
+	withRequestID := http.Header{requestIDHeader: {"req_abc123"}}
+
+	t.Run("prefers the api message", func(t *testing.T) {
+		err := apiError(413, withRequestID, &client.ErrorResponse{Error: &message})
+		if got, want := err.Error(), "status 413: File is too large (request id req_abc123)"; got != want {
+			t.Fatalf("expected %q, got %q", want, got)
+		}
+	})
+
+	t.Run("falls back to the status code", func(t *testing.T) {
+		err := apiError(500, http.Header{}, nil)
+		if got, want := err.Error(), "status 500"; got != want {
+			t.Fatalf("expected %q, got %q", want, got)
+		}
+	})
+
+	t.Run("tolerates an error response with no message", func(t *testing.T) {
+		empty := ""
+		err := apiError(502, withRequestID, &client.ErrorResponse{Error: &empty})
+		if got, want := err.Error(), "status 502 (request id req_abc123)"; got != want {
+			t.Fatalf("expected %q, got %q", want, got)
+		}
+	})
 }
 
 func TestExtractMetadata(t *testing.T) {
