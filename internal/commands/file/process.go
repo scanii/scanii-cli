@@ -178,6 +178,10 @@ func process(
 	if err != nil {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
+	// startTime is what the "Completed in" line reports, so these two bracket the
+	// same span the user sees. Anything unaccounted for between them is neither
+	// service construction nor the requests themselves.
+	slog.Debug("service ready", "at", time.Since(startTime))
 	err = fs.process(ctx, fileChannel, processOptions{
 		maxConcurrency: concurrencyLimit,
 		callback:       callback,
@@ -224,6 +228,7 @@ func process(
 	}
 	tracker.stop()
 	elapsed := time.Since(startTime)
+	slog.Debug("processing done", "at", elapsed, "files", filesFinished.Load(), "failed", filesFailed.Load())
 	throughput := float64(bytesTotal) / elapsed.Seconds()
 
 	// a single file has already printed its own result above
