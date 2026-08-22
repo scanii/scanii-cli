@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/uvasoftware/scanii-cli/internal/client"
 	"github.com/uvasoftware/scanii-cli/internal/commands/profile"
@@ -92,6 +93,14 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 		g.Go(func() error {
 
 			r := resultRecord{path: path}
+
+			// The whole per-file span, against which the request span below is
+			// compared: if the two disagree, the time went somewhere other than
+			// the wire.
+			fileStart := time.Now()
+			defer func() {
+				slog.Debug("file done", "path", path, "duration", time.Since(fileStart))
+			}()
 
 			fd, err := os.Open(path)
 			if err != nil {
@@ -183,7 +192,9 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 			}
 
 			if opts.async {
-				result, err := s.client.ProcessFileAsync(ctx, contentType, pipeReader)
+				reqCtx, timings := newRequestTimings(ctx)
+				result, err := s.client.ProcessFileAsync(reqCtx, contentType, pipeReader)
+				timings.log(path, err)
 				if err != nil {
 					_ = pipeWriter.CloseWithError(err)
 					writeRes := waitForWriter()
@@ -211,7 +222,9 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 
 				consumer(r)
 			} else {
-				result, localErr := s.client.ProcessFile(ctx, contentType, pipeReader)
+				reqCtx, timings := newRequestTimings(ctx)
+				result, localErr := s.client.ProcessFile(reqCtx, contentType, pipeReader)
+				timings.log(path, localErr)
 				if localErr != nil {
 					_ = pipeWriter.CloseWithError(localErr)
 					writeRes := waitForWriter()
