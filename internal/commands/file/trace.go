@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/uvasoftware/scanii-cli/internal/client"
@@ -13,7 +14,7 @@ import (
 	"github.com/uvasoftware/scanii-cli/internal/terminal"
 )
 
-func traceCommand(ctx context.Context, profileName *string) *cobra.Command {
+func traceCommand(ctx context.Context, profileName *string, perf *bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:        "trace [flags] [id]",
 		Short:      "Retrieve the processing trace for a previously created processing result",
@@ -30,7 +31,12 @@ func traceCommand(ctx context.Context, profileName *string) *cobra.Command {
 				return err
 			}
 
-			_, err = callFileTrace(ctx, c, args[0])
+			start := time.Now()
+			timings := &perfReport{}
+			_, err = callFileTrace(ctx, c, args[0], timings)
+			if *perf {
+				timings.print(time.Since(start))
+			}
 			return err
 		},
 	}
@@ -48,7 +54,7 @@ type traceEventRecord struct {
 	message   string
 }
 
-func callFileTrace(ctx context.Context, c *client.Client, id string) (*traceRecord, error) {
+func callFileTrace(ctx context.Context, c *client.Client, id string, timings *perfReport) (*traceRecord, error) {
 	if id == "" {
 		return nil, errors.New("id cannot be empty")
 	}
@@ -59,6 +65,7 @@ func callFileTrace(ctx context.Context, c *client.Client, id string) (*traceReco
 	if err != nil {
 		return nil, err
 	}
+	timings.addResponse(&resp.Response)
 
 	if resp.StatusCode == http.StatusNotFound {
 		return nil, fmt.Errorf("no trace exists for processing id %s", id)

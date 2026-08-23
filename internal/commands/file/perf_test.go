@@ -11,7 +11,7 @@ import (
 func TestPerfReportSkipsUnmeasuredRequests(t *testing.T) {
 	report := &perfReport{}
 	// a request that never reached the API carries nothing to average
-	report.add(&resultRecord{path: "unreachable.txt"})
+	report.add(client.Timings{}, "")
 
 	if _, requests := report.mean(); requests != 0 {
 		t.Fatalf("expected 0 requests, got %d", requests)
@@ -20,33 +20,27 @@ func TestPerfReportSkipsUnmeasuredRequests(t *testing.T) {
 
 func TestPerfReportMean(t *testing.T) {
 	report := &perfReport{}
-	report.add(&resultRecord{
-		requestID: "req_one",
-		timings: client.Timings{
-			Complete:         true,
-			DNS:              10 * time.Millisecond,
-			Connect:          2 * time.Millisecond,
-			TLS:              20 * time.Millisecond,
-			RequestTransfer:  100 * time.Millisecond,
-			ServerProcessing: 40 * time.Millisecond,
-			ResponseTransfer: 8 * time.Millisecond,
-			Total:            180 * time.Millisecond,
-			Reused:           true,
-		},
-	})
-	report.add(&resultRecord{
-		requestID: "req_two",
-		timings: client.Timings{
-			Complete:         true,
-			DNS:              20 * time.Millisecond,
-			Connect:          4 * time.Millisecond,
-			TLS:              40 * time.Millisecond,
-			RequestTransfer:  200 * time.Millisecond,
-			ServerProcessing: 60 * time.Millisecond,
-			ResponseTransfer: 12 * time.Millisecond,
-			Total:            340 * time.Millisecond,
-		},
-	})
+	report.add(client.Timings{
+		Complete:         true,
+		DNS:              10 * time.Millisecond,
+		Connect:          2 * time.Millisecond,
+		TLS:              20 * time.Millisecond,
+		RequestTransfer:  100 * time.Millisecond,
+		ServerProcessing: 40 * time.Millisecond,
+		ResponseTransfer: 8 * time.Millisecond,
+		Total:            180 * time.Millisecond,
+		Reused:           true,
+	}, "req_one")
+	report.add(client.Timings{
+		Complete:         true,
+		DNS:              20 * time.Millisecond,
+		Connect:          4 * time.Millisecond,
+		TLS:              40 * time.Millisecond,
+		RequestTransfer:  200 * time.Millisecond,
+		ServerProcessing: 60 * time.Millisecond,
+		ResponseTransfer: 12 * time.Millisecond,
+		Total:            340 * time.Millisecond,
+	}, "req_two")
 
 	mean, requests := report.mean()
 	if requests != 2 {
@@ -95,7 +89,7 @@ func TestPerfReportConcurrentAdd(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 50 {
 		wg.Go(func() {
-			report.add(&resultRecord{timings: client.Timings{Complete: true, Total: 10 * time.Millisecond}})
+			report.add(client.Timings{Complete: true, Total: 10 * time.Millisecond}, "req_x")
 		})
 	}
 	wg.Wait()
@@ -116,4 +110,12 @@ func TestPerfDurationReportsAMissingPhaseAsNotApplicable(t *testing.T) {
 	if got := perfDuration(250 * time.Millisecond); got != "250 ms" {
 		t.Fatalf("expected 250 ms, got %q", got)
 	}
+}
+
+func TestPerfReportNilDropsWhatItIsGiven(t *testing.T) {
+	// the call helpers take a report so the commands can pass one; the tests
+	// that exercise those helpers directly do not care about timings
+	var report *perfReport
+	report.add(client.Timings{Complete: true, Total: time.Second}, "req_x")
+	report.addResponse(&client.Response{Timings: client.Timings{Complete: true}})
 }

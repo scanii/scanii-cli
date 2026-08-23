@@ -20,9 +20,11 @@ type service struct {
 	client *client.Client
 }
 
-func newService(profile *profile.Profile) (*service, error) {
+// newService returns a service whose client pools enough connections for
+// maxConcurrency requests in flight at once.
+func newService(p *profile.Profile, maxConcurrency int) (*service, error) {
 
-	c, err := profile.Client()
+	c, err := p.Client(profile.WithMaxConcurrency(maxConcurrency))
 	if err != nil {
 		return nil, err
 	}

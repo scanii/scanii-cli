@@ -17,10 +17,9 @@ import (
 	"github.com/uvasoftware/scanii-cli/internal/terminal"
 )
 
-func processCommand(ctx context.Context, profile, metadata *string) *cobra.Command {
+func processCommand(ctx context.Context, profile, metadata *string, perf *bool) *cobra.Command {
 	concurrencyLimit := 32 * runtime.NumCPU()
 	ignoreHidden := false
-	perf := false
 	var callback string
 
 	cmd := &cobra.Command{
@@ -32,19 +31,18 @@ func processCommand(ctx context.Context, profile, metadata *string) *cobra.Comma
 If a directory is provided, all files in the directory will be processed recursively.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parsedMetadata := extractMetadata(*metadata)
-			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, false, callback, perf)
+			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, false, callback, *perf)
 		},
 	}
 
 	cmd.PersistentFlags().StringVar(&callback, "callback", "", "Callback URL to be invoked when processing is complete")
 	cmd.PersistentFlags().IntVarP(&concurrencyLimit, "concurrency", "c", concurrencyLimit, "Number of concurrent requests to use")
 	cmd.PersistentFlags().BoolVarP(&ignoreHidden, "ignore-hidden", "i", false, "Ignore hidden files")
-	cmd.PersistentFlags().BoolVar(&perf, "perf", false, "Print a timing breakdown of the API requests after the result")
 
 	return cmd
 }
 
-func asyncCommand(ctx context.Context, profile, metadata *string) *cobra.Command {
+func asyncCommand(ctx context.Context, profile, metadata *string, perf *bool) *cobra.Command {
 	concurrencyLimit := 32 * runtime.NumCPU()
 	ignoreHidden := false
 	var callback string
@@ -56,7 +54,7 @@ func asyncCommand(ctx context.Context, profile, metadata *string) *cobra.Command
 		ArgAliases: []string{"file/directory"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parsedMetadata := extractMetadata(*metadata)
-			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, true, callback, false)
+			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, true, callback, *perf)
 		},
 	}
 
@@ -178,7 +176,7 @@ func process(
 	defer tracker.stop()
 
 	startTime := time.Now()
-	fs, err := newService(p)
+	fs, err := newService(p, concurrencyLimit)
 	if err != nil {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
@@ -190,7 +188,7 @@ func process(
 		onBytes:        tracker.addBytes,
 	}, func(result resultRecord) {
 		if perf {
-			timings.add(&result)
+			timings.add(result.timings, result.requestID)
 		}
 
 		if result.err != nil {

@@ -26,10 +26,13 @@ type perfReport struct {
 	total     client.Timings
 }
 
-// add records the timings of one request. A request that never reached the API
-// carries nothing to report and is left out rather than averaged in as zeroes.
-func (p *perfReport) add(record *resultRecord) {
-	if !record.timings.Complete {
+// add records one request. A request that never reached the API carries nothing
+// to report and is left out rather than averaged in as zeroes.
+//
+// A nil report drops what it is given, so that the commands which take one can
+// be called without one.
+func (p *perfReport) add(timings client.Timings, requestID string) {
+	if p == nil || !timings.Complete {
 		return
 	}
 
@@ -37,17 +40,22 @@ func (p *perfReport) add(record *resultRecord) {
 	defer p.mu.Unlock()
 
 	p.requests++
-	p.requestID = record.requestID
-	if record.timings.Reused {
+	p.requestID = requestID
+	if timings.Reused {
 		p.reused++
 	}
-	p.total.DNS += record.timings.DNS
-	p.total.Connect += record.timings.Connect
-	p.total.TLS += record.timings.TLS
-	p.total.RequestTransfer += record.timings.RequestTransfer
-	p.total.ServerProcessing += record.timings.ServerProcessing
-	p.total.ResponseTransfer += record.timings.ResponseTransfer
-	p.total.Total += record.timings.Total
+	p.total.DNS += timings.DNS
+	p.total.Connect += timings.Connect
+	p.total.TLS += timings.TLS
+	p.total.RequestTransfer += timings.RequestTransfer
+	p.total.ServerProcessing += timings.ServerProcessing
+	p.total.ResponseTransfer += timings.ResponseTransfer
+	p.total.Total += timings.Total
+}
+
+// addResponse records the request that produced resp.
+func (p *perfReport) addResponse(resp *client.Response) {
+	p.add(resp.Timings, resp.RequestID())
 }
 
 // mean reports the average exchange, and how many exchanges it averages over.

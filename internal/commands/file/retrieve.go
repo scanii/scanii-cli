@@ -14,7 +14,7 @@ import (
 	"github.com/uvasoftware/scanii-cli/internal/terminal"
 )
 
-func retrieveCommand(ctx context.Context, profileName *string) *cobra.Command {
+func retrieveCommand(ctx context.Context, profileName *string, perf *bool) *cobra.Command {
 	var wait int
 
 	cmd := &cobra.Command{
@@ -33,7 +33,13 @@ func retrieveCommand(ctx context.Context, profileName *string) *cobra.Command {
 				return err
 			}
 
-			_, err = callFileRetrieve(ctx, c, args[0], wait)
+			// with --wait this covers every poll, so the summary reports the mean
+			start := time.Now()
+			timings := &perfReport{}
+			_, err = callFileRetrieve(ctx, c, args[0], wait, timings)
+			if *perf {
+				timings.print(time.Since(start))
+			}
 			return err
 		},
 	}
@@ -43,7 +49,7 @@ func retrieveCommand(ctx context.Context, profileName *string) *cobra.Command {
 	return cmd
 }
 
-func callFileRetrieve(ctx context.Context, c *client.Client, s string, wait int) (*resultRecord, error) {
+func callFileRetrieve(ctx context.Context, c *client.Client, s string, wait int, timings *perfReport) (*resultRecord, error) {
 	if s == "" {
 		return nil, errors.New("id cannot be empty")
 	}
@@ -69,6 +75,7 @@ func callFileRetrieve(ctx context.Context, c *client.Client, s string, wait int)
 		if err != nil {
 			return nil, err
 		}
+		timings.addResponse(&resp.Response)
 
 		if resp.StatusCode != http.StatusOK {
 			if wait == 0 {

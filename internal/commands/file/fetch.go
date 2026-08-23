@@ -17,7 +17,7 @@ import (
 	"github.com/uvasoftware/scanii-cli/internal/terminal"
 )
 
-func fetchCommand(ctx context.Context, profileName, metadata *string) *cobra.Command {
+func fetchCommand(ctx context.Context, profileName, metadata *string, perf *bool) *cobra.Command {
 	var callback string
 	var wait int
 
@@ -38,13 +38,23 @@ func fetchCommand(ctx context.Context, profileName, metadata *string) *cobra.Com
 				return err
 			}
 
-			result, err := callFilesFetch(ctx, c, args[0], callback, *metadata)
+			// one report for the whole invocation: with --wait that covers the
+			// submission and every poll that followed it
+			start := time.Now()
+			timings := &perfReport{}
+			defer func() {
+				if *perf {
+					timings.print(time.Since(start))
+				}
+			}()
+
+			result, err := callFilesFetch(ctx, c, args[0], callback, *metadata, timings)
 			if err != nil {
 				return err
 			}
 
 			if wait > 0 {
-				_, err = callFileRetrieve(ctx, c, result.id, wait)
+				_, err = callFileRetrieve(ctx, c, result.id, wait, timings)
 				return err
 			}
 			return nil
@@ -58,7 +68,7 @@ func fetchCommand(ctx context.Context, profileName, metadata *string) *cobra.Com
 }
 
 // callFilesFetch processes a remote url.
-func callFilesFetch(ctx context.Context, c *client.Client, location, callback, metadata string) (*resultRecord, error) {
+func callFilesFetch(ctx context.Context, c *client.Client, location, callback, metadata string, timings *perfReport) (*resultRecord, error) {
 	startTime := time.Now()
 	slog.Debug("processing location", "url", location)
 
@@ -85,6 +95,7 @@ func callFilesFetch(ctx context.Context, c *client.Client, location, callback, m
 	if err != nil {
 		return nil, err
 	}
+	timings.addResponse(&result.Response)
 
 	if result.StatusCode != http.StatusAccepted {
 		if result.Error != nil && result.Error.Error != nil {

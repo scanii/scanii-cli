@@ -244,11 +244,14 @@ processed, so a scan that half-failed does not pass for a clean one in CI.
 
 ### 6. Measure where the time went
 
-`--perf` prints a breakdown of the API requests a scan made, which is how to
-tell a slow network apart from a slow scan:
+`--perf` prints a breakdown of the API requests a command made, which is how to
+tell a slow network apart from a slow scan. It works on every `sc files`
+command:
 
 ```shell
 sc files process --perf /path/to/backup.tar
+sc files retrieve --perf RESULT_ID
+sc files fetch --perf --wait 30 https://example.com/document.pdf
 ```
 
 ```
@@ -284,8 +287,10 @@ and shakes no hands, and a plaintext endpoint never reaches the TLS phase. So
 does a phase that finished inside the clock's resolution, which on Windows is a
 millisecond — not a distinction that matters for the latencies this is for.
 
-A directory scan makes one request per file, so it reports the mean instead, and
-counts how many of those requests rode on a connection that was already open:
+A command that makes more than one request reports the mean instead, and counts
+how many of those requests rode on a connection that was already open. A
+directory scan sends one request per file; `retrieve --wait` and `fetch --wait`
+each poll until the result lands:
 
 ```
 ## Performance (mean of 128 requests)
@@ -298,6 +303,12 @@ counts how many of those requests rode on a connection that was already open:
   total:               597 ms
   connections:         96 of 128 reused
 ```
+
+`connections` is worth watching on a directory scan. The pool is sized to
+`--concurrency`, so once the first wave of files has opened its connections the
+rest of the run should reuse them; a low reuse count means the run is paying a
+connect and a TLS handshake per file, and none of that shows up in the API's own
+timings.
 
 ### 7. Manage auth tokens
 

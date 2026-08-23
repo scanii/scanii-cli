@@ -421,3 +421,26 @@ func TestApiKeyAndSecretParsing(t *testing.T) {
 		t.Fatalf("expected apiSecret 'secret:with:colons', got %q", c3.APISecret())
 	}
 }
+
+func TestWithMaxConcurrency(t *testing.T) {
+	tests := []struct {
+		name string
+		n    int
+		want int
+	}{
+		{"sizes the pool to the limit", 64, 64},
+		{"a single request still pools one", 1, 1},
+		{"an unset limit keeps the default", 0, http.DefaultMaxIdleConnsPerHost},
+		{"so does a nonsense one", -1, http.DefaultMaxIdleConnsPerHost},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := clientConfig{maxIdleConns: http.DefaultMaxIdleConnsPerHost}
+			WithMaxConcurrency(tt.n)(&cfg)
+			if cfg.maxIdleConns != tt.want {
+				t.Fatalf("expected %d idle connections, got %d", tt.want, cfg.maxIdleConns)
+			}
+		})
+	}
+}

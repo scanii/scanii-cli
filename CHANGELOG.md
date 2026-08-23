@@ -4,9 +4,14 @@
 
 ### Added
 
-- `--perf` on `sc files process`. Prints a timing breakdown of the API requests a scan made — DNS, TCP connect, TLS handshake, request transfer, server processing, response transfer, total, and the run's own overhead — so that a slow network can be told apart from a slow scan. A directory scan makes one request per file and reports the mean, plus how many of those requests reused a pooled connection. Phases that did not happen read `n/a` rather than `0 s`, as does a phase that finished inside the clock's resolution.
+- `--perf` on every `sc files` command — `process`, `async`, `fetch`, `retrieve` and `trace`. Prints a timing breakdown of the API requests the command made — DNS, TCP connect, TLS handshake, request transfer, server processing, response transfer, total, and the run's own overhead — so that a slow network can be told apart from a slow scan. A command that makes more than one request — a directory scan, or a `--wait` poll — reports the mean, plus how many of those requests reused a pooled connection. Phases that did not happen read `n/a` rather than `0 s`, as does a phase that finished inside the clock's resolution.
 - The `X-Scanii-Request-Id` of every file request is logged at info level, whether or not `--perf` was passed. It is the id support needs to look a scan up on the server side.
 - `client.Timings`, captured with `net/http/httptrace` on every request and carried on `client.Response`, along with `Response.RequestID()` and the `client.RequestIDHeader` constant.
+- `profile.WithMaxConcurrency`, which sizes the connection pool of the client a profile builds. Commands that make a single request are unaffected and keep the transport's default.
+
+### Fixed
+
+- The connection pool is now sized to `--concurrency` rather than left at Go's default of two idle connections per host. A run with more requests in flight than that was closing connections as fast as it opened them and paying a TCP connect — and against a real endpoint a TLS handshake — for files that should have reused one. Over 200 files at `--concurrency 64`, connections opened dropped from 118 to 45. None of that time appears in the API's own timings, which is what made it worth finding.
 
 ### Changed
 

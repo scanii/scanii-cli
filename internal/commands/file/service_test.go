@@ -14,7 +14,7 @@ import (
 
 func newTestService(t *testing.T) *service {
 	t.Helper()
-	svc, err := newService(ts.Profile)
+	svc, err := newService(ts.Profile, 1)
 	if err != nil {
 		t.Fatalf("failed to create service: %s", err)
 	}
@@ -159,7 +159,7 @@ func newTestServiceWithBadCredentials(t *testing.T) *service {
 		CreatedAt:   time.Now(),
 		Credentials: "bad:credentials",
 		Endpoint:    ts.Endpoint,
-	})
+	}, 1)
 	if err != nil {
 		t.Fatalf("failed to create service: %s", err)
 	}
@@ -377,5 +377,60 @@ func TestServiceRecordsRequestDiagnostics(t *testing.T) {
 				t.Fatal("expected the exchange to be reported as complete")
 			}
 		})
+	}
+}
+
+// TestServicePoolsAConnectionPerConcurrentRequest guards the sizing of the
+// connection pool. The transport keeps two idle connections per host by
+// default, so a run with more requests in flight than that used to close and
+// reopen most of its connections — paying a connect and a TLS handshake per
+// file that the API never sees in its own timings.
+func TestServicePoolsAConnectionPerConcurrentRequest(t *testing.T) {
+	const concurrency = 4
+
+	svc, err := newService(ts.Profile, concurrency)
+	if err != nil {
+		t.Fatalf("failed to create service: %s", err)
+	}
+
+	run := func(t *testing.T) []resultRecord {
+		t.Helper()
+
+		stream := make(chan string, concurrency)
+		for range concurrency {
+			stream <- fakeMalwareSample
+		}
+		close(stream)
+
+		var results []resultRecord
+		var mu sync.Mutex
+		err := svc.process(context.Background(), stream, processOptions{maxConcurrency: concurrency}, func(r resultRecord) {
+			mu.Lock()
+			results = append(results, r)
+			mu.Unlock()
+		})
+		if err != nil {
+			t.Fatalf("process failed: %s", err)
+		}
+		if len(results) != concurrency {
+			t.Fatalf("expected %d results, got %d", concurrency, len(results))
+		}
+		return results
+	}
+
+	// the first batch has nothing to reuse and leaves its connections idle
+	run(t)
+
+	reused := 0
+	for _, r := range run(t) {
+		if r.err != nil {
+			t.Fatalf("expected no error, got %s", r.err)
+		}
+		if r.timings.Reused {
+			reused++
+		}
+	}
+	if reused != concurrency {
+		t.Fatalf("expected all %d requests to reuse a pooled connection, got %d", concurrency, reused)
 	}
 }
