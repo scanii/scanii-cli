@@ -313,6 +313,13 @@ rest of the run should reuse them; a low reuse count means the run is paying a
 connect and a TLS handshake per file, and none of that shows up in the API's own
 timings.
 
+A scan keeps 32 requests in flight by default. That number belongs to the link
+rather than to the machine: once the uplink is full, more requests in flight buy
+no throughput and cost a connection — and a TLS handshake — each. If `--perf`
+shows `request transfer` is not what the run is waiting on, there is headroom to
+raise `--concurrency`; if a directory scan reports few reused connections, it is
+already higher than the link can use.
+
 ### 7. Manage auth tokens
 
 Create a short-lived auth token (default timeout: 300 seconds):

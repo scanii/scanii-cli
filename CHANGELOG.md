@@ -15,6 +15,7 @@
 
 ### Changed
 
+- The default `--concurrency` for `sc files process` and `sc files async` is now a flat 32, rather than `32 × NumCPU` — 320 requests in flight on a ten-core machine. Scanning is network-bound, so the figure belongs to the link and not to the machine: measured against a 60ms endpoint, wall clock stops improving past 16 on a 20Mbit/s link, and past 16 for megabyte files on a 100Mbit/s one. Only a fast link full of small files still gains beyond 32, and there 32 lands within a fifth of the best time while opening a sixth of the connections. Raise it with `--concurrency` on a link that can take it.
 - The console log handler only emits ANSI styling when the destination is a terminal, so `sc -v ... > log.txt` writes plain text rather than escape codes. Its fixed-width source column is likewise printed only when source reporting is on, instead of padding to fifty blanks.
 - `Client.do` returns a `*Response` and the body rather than a status, headers and body triple, so that the timings ride along with the rest of the response metadata.
 
