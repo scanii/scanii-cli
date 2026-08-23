@@ -201,6 +201,8 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 					return nil
 				}
 
+				r.recordRequest(&result.Response)
+
 				if result.StatusCode != http.StatusAccepted {
 					r.err = apiError(result.StatusCode, result.Header, result.Error)
 					slog.Debug("api error processing file", "path", path, "status", result.StatusCode, "error", r.err.Error())
@@ -228,6 +230,8 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 				if handleWriterError(writeRes) {
 					return nil
 				}
+
+				r.recordRequest(&result.Response)
 
 				calculatedSha1 := writeRes.sha1
 				slog.Debug("calculated sha1", "sha1", calculatedSha1)

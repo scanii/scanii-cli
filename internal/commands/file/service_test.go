@@ -335,3 +335,50 @@ func TestServiceProcessReportsUploadedBytes(t *testing.T) {
 		t.Fatalf("expected one successful result, got %+v", results)
 	}
 }
+
+func TestServiceRecordsRequestDiagnostics(t *testing.T) {
+	svc := newTestService(t)
+
+	for _, tc := range []struct {
+		name  string
+		async bool
+	}{
+		{"sync", false},
+		{"async", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			stream := make(chan string, 1)
+			stream <- fakeMalwareSample
+			close(stream)
+
+			var results []resultRecord
+			var mu sync.Mutex
+
+			err := svc.process(context.Background(), stream, processOptions{maxConcurrency: 1, async: tc.async}, func(r resultRecord) {
+				mu.Lock()
+				results = append(results, r)
+				mu.Unlock()
+			})
+			if err != nil {
+				t.Fatalf("process failed: %s", err)
+			}
+			if len(results) != 1 {
+				t.Fatalf("expected 1 result, got %d", len(results))
+			}
+
+			r := &results[0]
+			if r.err != nil {
+				t.Fatalf("expected no error, got %s", r.err)
+			}
+			if r.requestID == "" {
+				t.Fatal("expected the request id to be recorded")
+			}
+			if !r.timings.Measured() {
+				t.Fatal("expected the exchange to be timed")
+			}
+			if r.timings.Total <= 0 {
+				t.Fatalf("expected a positive total, got %s", r.timings.Total)
+			}
+		})
+	}
+}

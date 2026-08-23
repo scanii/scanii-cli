@@ -20,6 +20,7 @@ import (
 func processCommand(ctx context.Context, profile, metadata *string) *cobra.Command {
 	concurrencyLimit := 32 * runtime.NumCPU()
 	ignoreHidden := false
+	perf := false
 	var callback string
 
 	cmd := &cobra.Command{
@@ -31,13 +32,14 @@ func processCommand(ctx context.Context, profile, metadata *string) *cobra.Comma
 If a directory is provided, all files in the directory will be processed recursively.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parsedMetadata := extractMetadata(*metadata)
-			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, false, callback)
+			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, false, callback, perf)
 		},
 	}
 
 	cmd.PersistentFlags().StringVar(&callback, "callback", "", "Callback URL to be invoked when processing is complete")
 	cmd.PersistentFlags().IntVarP(&concurrencyLimit, "concurrency", "c", concurrencyLimit, "Number of concurrent requests to use")
 	cmd.PersistentFlags().BoolVarP(&ignoreHidden, "ignore-hidden", "i", false, "Ignore hidden files")
+	cmd.PersistentFlags().BoolVar(&perf, "perf", false, "Print a timing breakdown of the API requests after the result")
 
 	return cmd
 }
@@ -54,7 +56,7 @@ func asyncCommand(ctx context.Context, profile, metadata *string) *cobra.Command
 		ArgAliases: []string{"file/directory"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parsedMetadata := extractMetadata(*metadata)
-			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, true, callback)
+			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, true, callback, false)
 		},
 	}
 
@@ -74,6 +76,7 @@ func process(
 	ignoreHidden bool,
 	async bool,
 	callback string,
+	perf bool,
 ) error {
 	// counters
 	filesStarted := atomic.Uint64{}
@@ -162,6 +165,7 @@ func process(
 	// are collected and listed at the end
 	findings := &findingsReport{}
 	failures := &failureReport{}
+	timings := &perfReport{}
 
 	// results arrive from one goroutine per in-flight file, and a failure is
 	// reported in two writes — clearing the progress bar, then the message
@@ -185,6 +189,10 @@ func process(
 		metadata:       metadata,
 		onBytes:        tracker.addBytes,
 	}, func(result resultRecord) {
+		if perf {
+			timings.add(&result)
+		}
+
 		if result.err != nil {
 			slog.Debug("failed to process file", "file", result.path, "error", result.err)
 			failed := filesFailed.Add(1)
@@ -234,6 +242,10 @@ func process(
 				printFileResult(&withFindings[i])
 			}
 		}
+	}
+
+	if perf {
+		timings.print(elapsed)
 	}
 
 	fmt.Println()

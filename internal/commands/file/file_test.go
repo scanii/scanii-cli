@@ -119,7 +119,7 @@ func TestCallFileRetrieveEmptyID(t *testing.T) {
 
 func TestAPIError(t *testing.T) {
 	message := "File is too large"
-	withRequestID := http.Header{requestIDHeader: {"req_abc123"}}
+	withRequestID := http.Header{client.RequestIDHeader: {"req_abc123"}}
 
 	t.Run("prefers the api message", func(t *testing.T) {
 		err := apiError(413, withRequestID, &client.ErrorResponse{Error: &message})

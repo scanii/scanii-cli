@@ -35,12 +35,16 @@ func main() {
 		Short:   "Scanii CLI",
 		Long:    "A CLI to help you integrate Scanii (https://www.scanii.com) with your application",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			// the console handler is installed either way, so that the info-level
+			// lines a normal run emits — request ids, most usefully — are styled
+			// like the rest of the CLI rather than by slog's default handler
+			level := slog.LevelInfo
 			if verbose {
-				level := slog.LevelDebug
-				handler := log.NewConsoleLogHandler(os.Stdout, &log.Options{Level: level, AddSource: true})
-				slog.SetDefault(slog.New(handler))
-				slog.Debug("running in debug mode")
+				level = slog.LevelDebug
 			}
+			handler := log.NewConsoleLogHandler(os.Stdout, &log.Options{Level: level, AddSource: verbose, Color: terminal.IsTTY()})
+			slog.SetDefault(slog.New(handler))
+			slog.Debug("running in debug mode")
 
 			cmd.SilenceUsage = true
 			cmd.SilenceErrors = true

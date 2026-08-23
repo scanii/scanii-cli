@@ -120,6 +120,8 @@ spinner until the result lands:
 ```
 
 ```
+2026-08-08 08:41:43.508  INFO 24068 : processed file path=/path/to/backup.tar status=201 request_id=req_9f3a1c
+
 # /path/to/backup.tar:
 
   id:             ff03467da11f417aa99845c91793ce0c
@@ -133,6 +135,10 @@ spinner until the result lands:
 ✔ Completed in 4.2 s, 1 file(s) analyzed. Throughput 74.9 MB/s
 ✔ Files with findings: 0, unable to process: 0 and successfully processed: 1
 ```
+
+Every request logs the `X-Scanii-Request-Id` the API returned. That id is what
+support needs to look a specific scan up on the server side, so it is reported
+whether or not anything went wrong.
 
 Asynchronous scan (returns immediately with a pending result ID):
 
@@ -236,7 +242,62 @@ error: 1 of 12 file(s) could not be processed
 `sc files process` and `sc files async` exit non-zero if any file could not be
 processed, so a scan that half-failed does not pass for a clean one in CI.
 
-### 6. Manage auth tokens
+### 6. Measure where the time went
+
+`--perf` prints a breakdown of the API requests a scan made, which is how to
+tell a slow network apart from a slow scan:
+
+```shell
+sc files process --perf /path/to/backup.tar
+```
+
+```
+## Performance
+  request id:          req_9f3a1c
+  dns:                 24 ms
+  tcp connect:         31 ms
+  tls handshake:       58 ms
+  request transfer:    3.4 s
+  server processing:   612 ms
+  response transfer:   1.2 ms
+  total:               4.1 s
+  client overhead:     104 ms
+  connection:          new
+```
+
+The phases run in that order and, give or take the wait for a free connection,
+add up to `total`:
+
+| Phase | What it covers |
+|-------|----------------|
+| `dns` | Resolving the endpoint's host name |
+| `tcp connect` | Opening the socket |
+| `tls handshake` | Negotiating TLS |
+| `request transfer` | Sending the request — for a scan, the upload |
+| `server processing` | The API's own work, from the last request byte to the first response byte |
+| `response transfer` | Reading the response body |
+| `total` | The whole exchange |
+| `client overhead` | The rest of the run — reading and hashing the file, building the request, printing the result |
+
+A phase that did not happen reads `n/a`: a pooled connection resolves no name
+and shakes no hands, and a plaintext endpoint never reaches the TLS phase.
+
+A directory scan makes one request per file, so it reports the mean instead, and
+counts how many of those requests rode on a connection that was already open:
+
+```
+## Performance (mean of 128 requests)
+  dns:                 1 ms
+  tcp connect:         2 ms
+  tls handshake:       12 ms
+  request transfer:    184 ms
+  server processing:   397 ms
+  response transfer:   1.1 ms
+  total:               597 ms
+  connections:         96 of 128 reused
+```
+
+### 7. Manage auth tokens
 
 Create a short-lived auth token (default timeout: 300 seconds):
 
