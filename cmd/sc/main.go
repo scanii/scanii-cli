@@ -37,7 +37,7 @@ func main() {
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if verbose {
 				level := slog.LevelDebug
-				handler := log.NewConsoleLogHandler(os.Stdout, &log.Options{Level: level, AddSource: true})
+				handler := log.NewConsoleLogHandler(os.Stdout, &log.Options{Level: level, AddSource: true, Color: terminal.IsTTY()})
 				slog.SetDefault(slog.New(handler))
 				slog.Debug("running in debug mode")
 			}

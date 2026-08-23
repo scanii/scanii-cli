@@ -20,9 +20,11 @@ type service struct {
 	client *client.Client
 }
 
-func newService(profile *profile.Profile) (*service, error) {
+// newService returns a service whose client pools enough connections for
+// maxConcurrency requests in flight at once.
+func newService(p *profile.Profile, maxConcurrency int) (*service, error) {
 
-	c, err := profile.Client()
+	c, err := p.Client(profile.WithMaxConcurrency(maxConcurrency))
 	if err != nil {
 		return nil, err
 	}
@@ -201,6 +203,8 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 					return nil
 				}
 
+				r.recordRequest(&result.Response)
+
 				if result.StatusCode != http.StatusAccepted {
 					r.err = apiError(result.StatusCode, result.Header, result.Error)
 					slog.Debug("api error processing file", "path", path, "status", result.StatusCode, "error", r.err.Error())
@@ -228,6 +232,8 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 				if handleWriterError(writeRes) {
 					return nil
 				}
+
+				r.recordRequest(&result.Response)
 
 				calculatedSha1 := writeRes.sha1
 				slog.Debug("calculated sha1", "sha1", calculatedSha1)

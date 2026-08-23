@@ -35,6 +35,10 @@ type Options struct {
 
 	// AddSource adds source file information to log output.
 	AddSource bool
+
+	// Color emits ANSI styling. Callers set it from TTY detection, so that a
+	// run whose output is piped to a file writes plain text.
+	Color bool
 }
 
 // NewConsoleLogHandler creates a new customLogHandle that writes to w.
@@ -50,6 +54,15 @@ func NewConsoleLogHandler(w io.Writer, opts *Options) *ConsoleLogHandler {
 	return h
 }
 
+// color styles text with the given ANSI code, or leaves it alone when the
+// handler is writing somewhere that cannot render it.
+func (h *ConsoleLogHandler) color(code string, parts ...string) string {
+	if !h.opts.Color {
+		return strings.Join(parts, "")
+	}
+	return terminal.ToString(code, parts...)
+}
+
 func (h *ConsoleLogHandler) Enabled(_ context.Context, level slog.Level) bool {
 	minLevel := slog.LevelInfo
 	if h.opts.Level != nil {
@@ -63,7 +76,7 @@ func (h *ConsoleLogHandler) Handle(_ context.Context, r slog.Record) error { //n
 
 	// Timestamp - format: 2026-02-13 06:30:26.866
 	ts := r.Time.Format("2006-01-02 15:04:05.000")
-	_, err := fmt.Fprintf(&buf, "%s ", terminal.ToString(terminal.Dim, ts))
+	_, err := fmt.Fprintf(&buf, "%s ", h.color(terminal.Dim, ts))
 	if err != nil {
 		return err
 	}
@@ -71,35 +84,37 @@ func (h *ConsoleLogHandler) Handle(_ context.Context, r slog.Record) error { //n
 	// Level (colored by level, right-padded to 5 chars)
 	level := r.Level.String()
 	levelColor := levelToColor(r.Level)
-	_, err = fmt.Fprintf(&buf, "%5s ", terminal.ToString(levelColor, level))
+	_, err = fmt.Fprintf(&buf, "%5s ", h.color(levelColor, level))
 	if err != nil {
 		return err
 	}
 
 	// PID (magenta)
-	_, err = fmt.Fprintf(&buf, "%s ", terminal.ToString(terminal.Magenta, strconv.Itoa(h.pid)))
+	_, err = fmt.Fprintf(&buf, "%s ", h.color(terminal.Magenta, strconv.Itoa(h.pid)))
 	if err != nil {
 		return err
 	}
 
 	// Source file location
 	// Shows the rightmost 50 characters of the path relative to the module root
-	source := ""
+	// the column is fixed-width, so it is left out entirely rather than padded
+	// to fifty blanks when source reporting is off
 	if h.addSource {
+		source := ""
 		fs := runtime.CallersFrames([]uintptr{r.PC})
 		f, _ := fs.Next()
 		if f.File != "" {
 			relPath := shortenPath(f.File)
 			source = fmt.Sprintf("%s:%d", relPath, f.Line)
 		}
-	}
-	_, err = fmt.Fprintf(&buf, "%50s ", terminal.ToString(terminal.Cyan, truncateOrPad(source, 50)))
-	if err != nil {
-		return err
+		_, err = fmt.Fprintf(&buf, "%50s ", h.color(terminal.Cyan, truncateOrPad(source, 50)))
+		if err != nil {
+			return err
+		}
 	}
 
 	// Separator and message
-	_, err = fmt.Fprintf(&buf, "%s", terminal.ToString(terminal.Default, ": ", r.Message))
+	_, err = fmt.Fprintf(&buf, "%s", h.color(terminal.Default, ": ", r.Message))
 	if err != nil {
 		return err
 	}
@@ -124,12 +139,12 @@ func (h *ConsoleLogHandler) Handle(_ context.Context, r slog.Record) error { //n
 		if val.Kind() == slog.KindGroup {
 			groupAttrs := val.Group()
 			if len(groupAttrs) > 0 {
-				_, _ = fmt.Fprintf(&buf, " %s={", terminal.ToString(terminal.BrightWhite, a.Key))
+				_, _ = fmt.Fprintf(&buf, " %s={", h.color(terminal.BrightWhite, a.Key))
 				for i, ga := range groupAttrs {
 					if i > 0 {
 						buf.WriteString(", ")
 					}
-					_, _ = fmt.Fprintf(&buf, "%s=%s", terminal.ToString(terminal.BrightWhite, ga.Key), formatValue(ga.Value))
+					_, _ = fmt.Fprintf(&buf, "%s=%s", h.color(terminal.BrightWhite, ga.Key), formatValue(ga.Value))
 				}
 				buf.WriteString("}")
 			}
@@ -141,7 +156,7 @@ func (h *ConsoleLogHandler) Handle(_ context.Context, r slog.Record) error { //n
 				buf.WriteString(str)
 			}
 		} else {
-			_, _ = fmt.Fprintf(&buf, " %s=%s", terminal.ToString(terminal.BrightWhite, a.Key), formatValue(val))
+			_, _ = fmt.Fprintf(&buf, " %s=%s", h.color(terminal.BrightWhite, a.Key), formatValue(val))
 		}
 	}
 

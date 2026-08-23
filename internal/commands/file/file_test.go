@@ -57,7 +57,7 @@ func TestShouldProcessFetch(t *testing.T) {
 	}
 
 	t.Run("positive", func(t *testing.T) {
-		result, err := callFilesFetch(context.Background(), client, fmt.Sprintf("http://%s/static/eicar.txt", ts.Endpoint), "", "m1=v1")
+		result, err := callFilesFetch(context.Background(), client, fmt.Sprintf("http://%s/static/eicar.txt", ts.Endpoint), "", "m1=v1", nil)
 		if err != nil {
 			t.Fatalf("failed to process file: %s", err)
 		}
@@ -70,7 +70,7 @@ func TestShouldProcessFetch(t *testing.T) {
 		}
 
 		// retrieving it
-		retrieve, err := callFileRetrieve(context.Background(), client, result.id, 0)
+		retrieve, err := callFileRetrieve(context.Background(), client, result.id, 0, nil)
 		if err != nil {
 			t.Fatalf("failed to retrieve file: %s", err)
 		}
@@ -81,7 +81,7 @@ func TestShouldProcessFetch(t *testing.T) {
 	})
 
 	t.Run("negative", func(t *testing.T) {
-		result, err := callFilesFetch(context.Background(), client, fmt.Sprintf("http://%s/static/nope", ts.Endpoint), "", "m1=v1")
+		result, err := callFilesFetch(context.Background(), client, fmt.Sprintf("http://%s/static/nope", ts.Endpoint), "", "m1=v1", nil)
 		if err != nil {
 			t.Fatalf("failed to process file: %s", err)
 		}
@@ -94,7 +94,7 @@ func TestShouldProcessFetch(t *testing.T) {
 		}
 
 		// retrieving it — should have an error
-		retrieve, err := callFileRetrieve(context.Background(), client, result.id, 0)
+		retrieve, err := callFileRetrieve(context.Background(), client, result.id, 0, nil)
 		if err != nil {
 			t.Fatalf("failed to retrieve file: %s", err)
 		}
@@ -111,7 +111,7 @@ func TestCallFileRetrieveEmptyID(t *testing.T) {
 		t.Fatalf("failed to create client: %s", err)
 	}
 
-	_, err = callFileRetrieve(context.Background(), client, "", 0)
+	_, err = callFileRetrieve(context.Background(), client, "", 0, nil)
 	if err == nil {
 		t.Fatalf("expected error for empty id")
 	}
@@ -119,7 +119,7 @@ func TestCallFileRetrieveEmptyID(t *testing.T) {
 
 func TestAPIError(t *testing.T) {
 	message := "File is too large"
-	withRequestID := http.Header{requestIDHeader: {"req_abc123"}}
+	withRequestID := http.Header{client.RequestIDHeader: {"req_abc123"}}
 
 	t.Run("prefers the api message", func(t *testing.T) {
 		err := apiError(413, withRequestID, &client.ErrorResponse{Error: &message})

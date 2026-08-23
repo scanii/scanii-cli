@@ -225,10 +225,41 @@ func (c *Profile) APISecret() string {
 	return parts[1]
 }
 
-func (c *Profile) Client() (*client.Client, error) {
+// Option configures the client a profile builds.
+type Option func(*clientConfig)
+
+type clientConfig struct {
+	maxIdleConns int
+}
+
+// WithMaxConcurrency sizes the connection pool to the number of requests the
+// caller intends to have in flight at once.
+//
+// Without it the transport keeps Go's default of two idle connections per host,
+// so a run that uploads dozens of files at a time closes all but two of its
+// connections the moment they go idle and opens fresh ones — paying a DNS
+// lookup, a TCP connect and a TLS handshake per file that the API never sees in
+// its own timings.
+func WithMaxConcurrency(n int) Option {
+	return func(cfg *clientConfig) {
+		if n < 1 {
+			return
+		}
+		cfg.maxIdleConns = n
+	}
+}
+
+func (c *Profile) Client(opts ...Option) (*client.Client, error) {
 	dest := fmt.Sprintf("https://%s/v2.2", c.Endpoint)
 	if strings.HasPrefix(c.Endpoint, "localhost") {
 		dest = fmt.Sprintf("http://%s/v2.2", c.Endpoint)
+	}
+
+	// a command that makes one request has nothing to pool, so the default is
+	// what the transport would have used anyway
+	cfg := clientConfig{maxIdleConns: http.DefaultMaxIdleConnsPerHost}
+	for _, o := range opts {
+		o(&cfg)
 	}
 
 	return client.New(dest,
@@ -245,6 +276,11 @@ func (c *Profile) Client() (*client.Client, error) {
 				DialContext:           (&net.Dialer{Timeout: 30 * time.Second}).DialContext,
 				TLSHandshakeTimeout:   15 * time.Second,
 				ResponseHeaderTimeout: 30 * time.Minute,
+				// there is only ever one host in play, so the two limits are the
+				// same number — capping the total below the per-host figure would
+				// quietly undo it
+				MaxIdleConns:        cfg.maxIdleConns,
+				MaxIdleConnsPerHost: cfg.maxIdleConns,
 			},
 		}),
 	)

@@ -134,6 +134,15 @@ spinner until the result lands:
 ✔ Files with findings: 0, unable to process: 0 and successfully processed: 1
 ```
 
+Every request records the `X-Scanii-Request-Id` the API returned — the id
+support needs to look a specific scan up on the server side. A request that
+failed quotes it in the error; otherwise `--perf` prints it, and `-v` logs it
+for every request:
+
+```
+2026-08-08 08:41:43.508 DEBUG 24068 internal/commands/file/common.go:38                : processed file path=/path/to/backup.tar status=201 request_id=req_9f3a1c
+```
+
 Asynchronous scan (returns immediately with a pending result ID):
 
 ```shell
@@ -236,7 +245,88 @@ error: 1 of 12 file(s) could not be processed
 `sc files process` and `sc files async` exit non-zero if any file could not be
 processed, so a scan that half-failed does not pass for a clean one in CI.
 
-### 6. Manage auth tokens
+### 6. Measure where the time went
+
+`--perf` prints a breakdown of the API requests a command made, which is how to
+tell a slow network apart from a slow scan. It works on every `sc files`
+command:
+
+```shell
+sc files process --perf /path/to/backup.tar
+sc files retrieve --perf RESULT_ID
+sc files fetch --perf --wait 30 https://example.com/document.pdf
+```
+
+```
+## Performance
+  request id:          req_9f3a1c
+  dns:                 24 ms
+  tcp connect:         31 ms
+  tls handshake:       58 ms
+  request transfer:    3.4 s
+  server processing:   612 ms
+  response transfer:   1.2 ms
+  total:               4.1 s
+  client overhead:     104 ms
+  connection:          new
+```
+
+The phases run in that order and, give or take the wait for a free connection,
+add up to `total`:
+
+| Phase | What it covers |
+|-------|----------------|
+| `dns` | Resolving the endpoint's host name |
+| `tcp connect` | Opening the socket |
+| `tls handshake` | Negotiating TLS |
+| `request transfer` | Sending the request — for a scan, the upload |
+| `server processing` | Last request byte out to first response byte back — the API's work *plus* the round trip carrying the question and the answer |
+| `response transfer` | First response byte to the last byte of the body |
+| `total` | The whole exchange |
+| `client overhead` | The rest of the run — reading and hashing the file, building the request, printing the result |
+
+`server processing` is measured from this end, so it cannot separate the API's
+work from the round trip it takes to ask and be answered; against a distant
+endpoint it reads higher than what the server reports for the same request, by
+about one round trip. It is the floor for a scan — `client overhead` and the
+three connection phases are the parts a caller can do something about.
+
+A phase that did not happen reads `n/a`: a pooled connection resolves no name
+and shakes no hands, and a plaintext endpoint never reaches the TLS phase. So
+does a phase that finished inside the clock's resolution, which on Windows is a
+millisecond — not a distinction that matters for the latencies this is for.
+
+A command that makes more than one request reports the mean instead, and counts
+how many of those requests rode on a connection that was already open. A
+directory scan sends one request per file; `retrieve --wait` and `fetch --wait`
+each poll until the result lands:
+
+```
+## Performance (mean of 128 requests)
+  dns:                 1 ms
+  tcp connect:         2 ms
+  tls handshake:       12 ms
+  request transfer:    184 ms
+  server processing:   397 ms
+  response transfer:   1.1 ms
+  total:               597 ms
+  connections:         96 of 128 reused
+```
+
+`connections` is worth watching on a directory scan. The pool is sized to
+`--concurrency`, so once the first wave of files has opened its connections the
+rest of the run should reuse them; a low reuse count means the run is paying a
+connect and a TLS handshake per file, and none of that shows up in the API's own
+timings.
+
+A scan keeps 32 requests in flight by default. That number belongs to the link
+rather than to the machine: once the uplink is full, more requests in flight buy
+no throughput and cost a connection — and a TLS handshake — each. If `--perf`
+shows `request transfer` is not what the run is waiting on, there is headroom to
+raise `--concurrency`; if a directory scan reports few reused connections, it is
+already higher than the link can use.
+
+### 7. Manage auth tokens
 
 Create a short-lived auth token (default timeout: 300 seconds):
 

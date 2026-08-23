@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.8.0]
+
+### Added
+
+- `--perf` on every `sc files` command — `process`, `async`, `fetch`, `retrieve` and `trace`. Prints a timing breakdown of the API requests the command made — DNS, TCP connect, TLS handshake, request transfer, server processing, response transfer, total, and the run's own overhead — so that a slow network can be told apart from a slow scan. A command that makes more than one request — a directory scan, or a `--wait` poll — reports the mean, plus how many of those requests reused a pooled connection. Phases that did not happen read `n/a` rather than `0 s`, as does a phase that finished inside the clock's resolution.
+- The `X-Scanii-Request-Id` of every file request is logged at debug level, whether or not the request succeeded. It is the id support needs to look a scan up on the server side; `--perf` prints it too, and a failed request already quoted it in its error.
+- `client.Timings`, captured with `net/http/httptrace` on every request and carried on `client.Response`, along with `Response.RequestID()` and the `client.RequestIDHeader` constant.
+- `profile.WithMaxConcurrency`, which sizes the connection pool of the client a profile builds. Commands that make a single request are unaffected and keep the transport's default.
+
+### Fixed
+
+- The connection pool is now sized to `--concurrency` rather than left at Go's default of two idle connections per host. A run with more requests in flight than that was closing connections as fast as it opened them and paying a TCP connect — and against a real endpoint a TLS handshake — for files that should have reused one. Over 200 files at `--concurrency 64`, connections opened dropped from 118 to 45. None of that time appears in the API's own timings, which is what made it worth finding.
+
+### Changed
+
+- The default `--concurrency` for `sc files process` and `sc files async` is now a flat 32, rather than `32 × NumCPU` — 320 requests in flight on a ten-core machine. Scanning is network-bound, so the figure belongs to the link and not to the machine: measured against a 60ms endpoint, wall clock stops improving past 16 on a 20Mbit/s link, and past 16 for megabyte files on a 100Mbit/s one. Only a fast link full of small files still gains beyond 32, and there 32 lands within a fifth of the best time while opening a sixth of the connections. Raise it with `--concurrency` on a link that can take it.
+- The console log handler only emits ANSI styling when the destination is a terminal, so `sc -v ... > log.txt` writes plain text rather than escape codes. Its fixed-width source column is likewise printed only when source reporting is on, instead of padding to fifty blanks.
+- `Client.do` returns a `*Response` and the body rather than a status, headers and body triple, so that the timings ride along with the rest of the response metadata.
+
 ## [1.7.1]
 
 ### Fixed

@@ -11,10 +11,6 @@ import (
 	"github.com/uvasoftware/scanii-cli/internal/terminal"
 )
 
-// requestIDHeader carries the API's identifier for a single request, which is
-// what support needs to look a failure up on the server side.
-const requestIDHeader = "X-Scanii-Request-Id"
-
 type resultRecord struct {
 	path          string
 	err           error
@@ -26,6 +22,20 @@ type resultRecord struct {
 	contentLength uint64
 	creationDate  string
 	metadata      map[string]string
+	// requestID identifies the API request that produced this record, and
+	// timings is where its wall clock went.
+	requestID string
+	timings   client.Timings
+}
+
+// recordRequest carries the per-request diagnostics off the response. The
+// request id is what support needs to look a request up on the server side, and
+// it is logged for every request rather than only the ones that failed — but at
+// debug level, since a directory run would otherwise log a line per file.
+func (r *resultRecord) recordRequest(resp *client.Response) {
+	r.requestID = resp.RequestID()
+	r.timings = resp.Timings
+	slog.Debug("processed file", "path", r.path, "status", resp.StatusCode, "request_id", r.requestID)
 }
 
 // apiError builds an error from a non-success API response, preferring the
@@ -37,7 +47,7 @@ func apiError(status int, header http.Header, apiErr *client.ErrorResponse) erro
 	if apiErr != nil && apiErr.Error != nil && *apiErr.Error != "" {
 		msg = fmt.Sprintf("%s: %s", msg, *apiErr.Error)
 	}
-	if id := header.Get(requestIDHeader); id != "" {
+	if id := header.Get(client.RequestIDHeader); id != "" {
 		msg = fmt.Sprintf("%s (request id %s)", msg, id)
 	}
 	return errors.New(msg)

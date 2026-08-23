@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,8 +16,25 @@ import (
 	"github.com/uvasoftware/scanii-cli/internal/terminal"
 )
 
-func processCommand(ctx context.Context, profile, metadata *string) *cobra.Command {
-	concurrencyLimit := 32 * runtime.NumCPU()
+// defaultConcurrency is how many requests a scan keeps in flight.
+//
+// This is a network-bound workload, so the figure is a property of the link and
+// not of the machine: past the point where the uplink is full, more requests in
+// flight buy nothing and cost a connection — and against a real endpoint a TLS
+// handshake — each. Measured against a 60ms endpoint, wall clock stops
+// improving at 16 on a 20Mbit/s link and at 16 for megabyte files on a
+// 100Mbit/s one; only a fast link full of tiny files still gains past 32, and
+// there 32 lands within a fifth of the best time while opening a sixth of the
+// connections.
+//
+// It was 32 x NumCPU, which is a CPU heuristic applied to a problem that has
+// nothing to do with CPUs: on a ten-core machine it meant 320 simultaneous
+// uploads, and 320 handshakes, to hide one round trip. Raise it with
+// --concurrency on a link that can take it.
+const defaultConcurrency = 32
+
+func processCommand(ctx context.Context, profile, metadata *string, perf *bool) *cobra.Command {
+	concurrencyLimit := defaultConcurrency
 	ignoreHidden := false
 	var callback string
 
@@ -31,7 +47,7 @@ func processCommand(ctx context.Context, profile, metadata *string) *cobra.Comma
 If a directory is provided, all files in the directory will be processed recursively.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parsedMetadata := extractMetadata(*metadata)
-			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, false, callback)
+			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, false, callback, *perf)
 		},
 	}
 
@@ -42,8 +58,8 @@ If a directory is provided, all files in the directory will be processed recursi
 	return cmd
 }
 
-func asyncCommand(ctx context.Context, profile, metadata *string) *cobra.Command {
-	concurrencyLimit := 32 * runtime.NumCPU()
+func asyncCommand(ctx context.Context, profile, metadata *string, perf *bool) *cobra.Command {
+	concurrencyLimit := defaultConcurrency
 	ignoreHidden := false
 	var callback string
 
@@ -54,7 +70,7 @@ func asyncCommand(ctx context.Context, profile, metadata *string) *cobra.Command
 		ArgAliases: []string{"file/directory"},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			parsedMetadata := extractMetadata(*metadata)
-			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, true, callback)
+			return process(ctx, *profile, args[0], parsedMetadata, concurrencyLimit, ignoreHidden, true, callback, *perf)
 		},
 	}
 
@@ -74,6 +90,7 @@ func process(
 	ignoreHidden bool,
 	async bool,
 	callback string,
+	perf bool,
 ) error {
 	// counters
 	filesStarted := atomic.Uint64{}
@@ -162,6 +179,7 @@ func process(
 	// are collected and listed at the end
 	findings := &findingsReport{}
 	failures := &failureReport{}
+	timings := &perfReport{}
 
 	// results arrive from one goroutine per in-flight file, and a failure is
 	// reported in two writes — clearing the progress bar, then the message
@@ -174,7 +192,7 @@ func process(
 	defer tracker.stop()
 
 	startTime := time.Now()
-	fs, err := newService(p)
+	fs, err := newService(p, concurrencyLimit)
 	if err != nil {
 		return fmt.Errorf("failed to create service: %w", err)
 	}
@@ -185,6 +203,10 @@ func process(
 		metadata:       metadata,
 		onBytes:        tracker.addBytes,
 	}, func(result resultRecord) {
+		if perf {
+			timings.add(result.timings, result.requestID)
+		}
+
 		if result.err != nil {
 			slog.Debug("failed to process file", "file", result.path, "error", result.err)
 			failed := filesFailed.Add(1)
@@ -234,6 +256,10 @@ func process(
 				printFileResult(&withFindings[i])
 			}
 		}
+	}
+
+	if perf {
+		timings.print(elapsed)
 	}
 
 	fmt.Println()

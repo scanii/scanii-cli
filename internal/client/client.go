@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"strings"
 )
 
@@ -52,10 +53,23 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 	}
 }
 
+// RequestIDHeader carries the API's identifier for a single request, which is
+// what support needs to look one up on the server side.
+const RequestIDHeader = "X-Scanii-Request-Id"
+
 // Response is the base response containing HTTP metadata.
 type Response struct {
 	StatusCode int
 	Header     http.Header
+	// Timings is the wall-clock breakdown of the exchange that produced this
+	// response.
+	Timings Timings
+}
+
+// RequestID returns the API's identifier for the request, or an empty string if
+// the response carried none.
+func (r *Response) RequestID() string {
+	return r.Header.Get(RequestIDHeader)
 }
 
 // PingResult is the response from the ping endpoint.
@@ -117,41 +131,50 @@ type RetrieveTokenResult struct {
 	Token *AuthToken
 }
 
-// do executes an HTTP request and returns the status code, headers, and body bytes.
-func (c *Client) do(ctx context.Context, method, path, contentType string, body io.Reader) (int, http.Header, []byte, error) { //nolint:gocritic
+// do executes an HTTP request and returns the response metadata and body bytes.
+// Every exchange is timed, so that callers which care about where the wall clock
+// went can read it off the response.
+func (c *Client) do(ctx context.Context, method, path, contentType string, body io.Reader) (*Response, []byte, error) {
+	var t tracer
+	ctx = httptrace.WithClientTrace(ctx, t.trace())
+
 	url := c.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
-		return 0, nil, nil, fmt.Errorf("creating request: %w", err)
+		return nil, nil, fmt.Errorf("creating request: %w", err)
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 	for _, editor := range c.editors {
 		if err := editor(ctx, req); err != nil {
-			return 0, nil, nil, fmt.Errorf("applying request editor: %w", err)
+			return nil, nil, fmt.Errorf("applying request editor: %w", err)
 		}
 	}
+	t.begin()
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return 0, nil, nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return resp.StatusCode, resp.Header, nil, fmt.Errorf("reading response body: %w", err)
+
+	data, readErr := io.ReadAll(resp.Body)
+	t.bodyRead()
+	r := &Response{StatusCode: resp.StatusCode, Header: resp.Header, Timings: t.result()}
+	if readErr != nil {
+		return r, nil, fmt.Errorf("reading response body: %w", readErr)
 	}
-	return resp.StatusCode, resp.Header, data, nil
+	return r, data, nil
 }
 
 // Ping validates API credentials.
 func (c *Client) Ping(ctx context.Context) (*PingResult, error) {
-	status, header, body, err := c.do(ctx, http.MethodGet, "/ping", "", nil)
+	resp, body, err := c.do(ctx, http.MethodGet, "/ping", "", nil)
 	if err != nil {
 		return nil, err
 	}
-	result := &PingResult{Response: Response{StatusCode: status, Header: header}}
-	if status == http.StatusOK && len(body) > 0 {
+	result := &PingResult{Response: *resp}
+	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		_ = json.Unmarshal(body, result)
 	}
 	return result, nil
@@ -159,12 +182,12 @@ func (c *Client) Ping(ctx context.Context) (*PingResult, error) {
 
 // Account retrieves account information.
 func (c *Client) Account(ctx context.Context) (*AccountResult, error) {
-	status, header, body, err := c.do(ctx, http.MethodGet, "/account.json", "", nil)
+	resp, body, err := c.do(ctx, http.MethodGet, "/account.json", "", nil)
 	if err != nil {
 		return nil, err
 	}
-	result := &AccountResult{Response: Response{StatusCode: status, Header: header}}
-	if status == http.StatusOK && len(body) > 0 {
+	result := &AccountResult{Response: *resp}
+	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		var info AccountInfo
 		if err := json.Unmarshal(body, &info); err != nil {
 			return nil, fmt.Errorf("parsing account response: %w", err)
@@ -176,20 +199,20 @@ func (c *Client) Account(ctx context.Context) (*AccountResult, error) {
 
 // ProcessFile processes a file synchronously.
 func (c *Client) ProcessFile(ctx context.Context, contentType string, body io.Reader) (*ProcessFileResult, error) {
-	status, header, respBody, err := c.do(ctx, http.MethodPost, "/files", contentType, body)
+	resp, respBody, err := c.do(ctx, http.MethodPost, "/files", contentType, body)
 	if err != nil {
 		return nil, err
 	}
-	result := &ProcessFileResult{Response: Response{StatusCode: status, Header: header}}
+	result := &ProcessFileResult{Response: *resp}
 	if len(respBody) > 0 {
 		switch {
-		case status == http.StatusCreated:
+		case resp.StatusCode == http.StatusCreated:
 			var pr ProcessingResponse
 			if err := json.Unmarshal(respBody, &pr); err != nil {
 				return nil, fmt.Errorf("parsing process file response: %w", err)
 			}
 			result.Result = &pr
-		case status >= 400:
+		case resp.StatusCode >= 400:
 			var er ErrorResponse
 			if err := json.Unmarshal(respBody, &er); err == nil {
 				result.Error = &er
@@ -201,20 +224,20 @@ func (c *Client) ProcessFile(ctx context.Context, contentType string, body io.Re
 
 // ProcessFileAsync processes a file asynchronously.
 func (c *Client) ProcessFileAsync(ctx context.Context, contentType string, body io.Reader) (*ProcessFileAsyncResult, error) {
-	status, header, respBody, err := c.do(ctx, http.MethodPost, "/files/async", contentType, body)
+	resp, respBody, err := c.do(ctx, http.MethodPost, "/files/async", contentType, body)
 	if err != nil {
 		return nil, err
 	}
-	result := &ProcessFileAsyncResult{Response: Response{StatusCode: status, Header: header}}
+	result := &ProcessFileAsyncResult{Response: *resp}
 	if len(respBody) > 0 {
 		switch {
-		case status == http.StatusAccepted:
+		case resp.StatusCode == http.StatusAccepted:
 			var pr ProcessingPendingResponse
 			if err := json.Unmarshal(respBody, &pr); err != nil {
 				return nil, fmt.Errorf("parsing async response: %w", err)
 			}
 			result.Pending = &pr
-		case status >= 400:
+		case resp.StatusCode >= 400:
 			var er ErrorResponse
 			if err := json.Unmarshal(respBody, &er); err == nil {
 				result.Error = &er
@@ -226,20 +249,20 @@ func (c *Client) ProcessFileAsync(ctx context.Context, contentType string, body 
 
 // ProcessFileFetch submits a URL for asynchronous processing.
 func (c *Client) ProcessFileFetch(ctx context.Context, contentType string, body io.Reader) (*ProcessFileFetchResult, error) {
-	status, header, respBody, err := c.do(ctx, http.MethodPost, "/files/fetch", contentType, body)
+	resp, respBody, err := c.do(ctx, http.MethodPost, "/files/fetch", contentType, body)
 	if err != nil {
 		return nil, err
 	}
-	result := &ProcessFileFetchResult{Response: Response{StatusCode: status, Header: header}}
+	result := &ProcessFileFetchResult{Response: *resp}
 	if len(respBody) > 0 {
 		switch {
-		case status == http.StatusAccepted:
+		case resp.StatusCode == http.StatusAccepted:
 			var pr ProcessingPendingResponse
 			if err := json.Unmarshal(respBody, &pr); err != nil {
 				return nil, fmt.Errorf("parsing fetch response: %w", err)
 			}
 			result.Pending = &pr
-		case status >= 400:
+		case resp.StatusCode >= 400:
 			var er ErrorResponse
 			if err := json.Unmarshal(respBody, &er); err == nil {
 				result.Error = &er
@@ -251,12 +274,12 @@ func (c *Client) ProcessFileFetch(ctx context.Context, contentType string, body 
 
 // RetrieveFile retrieves a previously processed file result.
 func (c *Client) RetrieveFile(ctx context.Context, id string) (*RetrieveFileResult, error) {
-	status, header, body, err := c.do(ctx, http.MethodGet, "/files/"+id, "", nil)
+	resp, body, err := c.do(ctx, http.MethodGet, "/files/"+id, "", nil)
 	if err != nil {
 		return nil, err
 	}
-	result := &RetrieveFileResult{Response: Response{StatusCode: status, Header: header}}
-	if status == http.StatusOK && len(body) > 0 {
+	result := &RetrieveFileResult{Response: *resp}
+	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		var pr ProcessingResponse
 		if err := json.Unmarshal(body, &pr); err != nil {
 			return nil, fmt.Errorf("parsing retrieve file response: %w", err)
@@ -268,20 +291,20 @@ func (c *Client) RetrieveFile(ctx context.Context, id string) (*RetrieveFileResu
 
 // RetrieveTrace retrieves the processing trace for a previously processed file.
 func (c *Client) RetrieveTrace(ctx context.Context, id string) (*RetrieveTraceResult, error) {
-	status, header, body, err := c.do(ctx, http.MethodGet, "/files/"+id+"/trace", "", nil)
+	resp, body, err := c.do(ctx, http.MethodGet, "/files/"+id+"/trace", "", nil)
 	if err != nil {
 		return nil, err
 	}
-	result := &RetrieveTraceResult{Response: Response{StatusCode: status, Header: header}}
+	result := &RetrieveTraceResult{Response: *resp}
 	if len(body) > 0 {
 		switch {
-		case status == http.StatusOK:
+		case resp.StatusCode == http.StatusOK:
 			var tr TraceResponse
 			if err := json.Unmarshal(body, &tr); err != nil {
 				return nil, fmt.Errorf("parsing retrieve trace response: %w", err)
 			}
 			result.Trace = &tr
-		case status >= 400:
+		case resp.StatusCode >= 400:
 			var er ErrorResponse
 			if err := json.Unmarshal(body, &er); err == nil {
 				result.Error = &er
@@ -293,12 +316,12 @@ func (c *Client) RetrieveTrace(ctx context.Context, id string) (*RetrieveTraceRe
 
 // CreateToken creates a temporary authentication token.
 func (c *Client) CreateToken(ctx context.Context, contentType string, body io.Reader) (*CreateTokenResult, error) {
-	status, header, respBody, err := c.do(ctx, http.MethodPost, "/auth/tokens", contentType, body)
+	resp, respBody, err := c.do(ctx, http.MethodPost, "/auth/tokens", contentType, body)
 	if err != nil {
 		return nil, err
 	}
-	result := &CreateTokenResult{Response: Response{StatusCode: status, Header: header}}
-	if status == http.StatusCreated && len(respBody) > 0 {
+	result := &CreateTokenResult{Response: *resp}
+	if resp.StatusCode == http.StatusCreated && len(respBody) > 0 {
 		var token AuthToken
 		if err := json.Unmarshal(respBody, &token); err != nil {
 			return nil, fmt.Errorf("parsing create token response: %w", err)
@@ -310,12 +333,12 @@ func (c *Client) CreateToken(ctx context.Context, contentType string, body io.Re
 
 // RetrieveToken retrieves an existing authentication token.
 func (c *Client) RetrieveToken(ctx context.Context, id string) (*RetrieveTokenResult, error) {
-	status, header, body, err := c.do(ctx, http.MethodGet, "/auth/tokens/"+id, "", nil)
+	resp, body, err := c.do(ctx, http.MethodGet, "/auth/tokens/"+id, "", nil)
 	if err != nil {
 		return nil, err
 	}
-	result := &RetrieveTokenResult{Response: Response{StatusCode: status, Header: header}}
-	if status == http.StatusOK && len(body) > 0 {
+	result := &RetrieveTokenResult{Response: *resp}
+	if resp.StatusCode == http.StatusOK && len(body) > 0 {
 		var token AuthToken
 		if err := json.Unmarshal(body, &token); err != nil {
 			return nil, fmt.Errorf("parsing retrieve token response: %w", err)
@@ -327,9 +350,9 @@ func (c *Client) RetrieveToken(ctx context.Context, id string) (*RetrieveTokenRe
 
 // DeleteToken deletes an authentication token.
 func (c *Client) DeleteToken(ctx context.Context, id string) (*Response, error) {
-	status, header, _, err := c.do(ctx, http.MethodDelete, "/auth/tokens/"+id, "", nil)
+	resp, _, err := c.do(ctx, http.MethodDelete, "/auth/tokens/"+id, "", nil)
 	if err != nil {
 		return nil, err
 	}
-	return &Response{StatusCode: status, Header: header}, nil
+	return resp, nil
 }

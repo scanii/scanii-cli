@@ -12,7 +12,7 @@ func TestCallFileTraceEmptyID(t *testing.T) {
 		t.Fatalf("failed to create client: %s", err)
 	}
 
-	_, err = callFileTrace(context.Background(), c, "")
+	_, err = callFileTrace(context.Background(), c, "", nil)
 	if err == nil {
 		t.Fatalf("expected error for empty id")
 	}
@@ -24,7 +24,7 @@ func TestCallFileTraceUnknownID(t *testing.T) {
 		t.Fatalf("failed to create client: %s", err)
 	}
 
-	_, err = callFileTrace(context.Background(), c, "doesnotexist")
+	_, err = callFileTrace(context.Background(), c, "doesnotexist", nil)
 	if err == nil {
 		t.Fatalf("expected error for unknown id")
 	}
@@ -54,7 +54,7 @@ func TestCallFileTraceKnownID(t *testing.T) {
 		t.Fatalf("expected processed result to have an id")
 	}
 
-	trace, err := callFileTrace(context.Background(), c, processed.id)
+	trace, err := callFileTrace(context.Background(), c, processed.id, nil)
 	if err != nil {
 		t.Fatalf("failed to retrieve trace: %s", err)
 	}

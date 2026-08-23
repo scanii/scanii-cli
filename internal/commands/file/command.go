@@ -9,6 +9,7 @@ import (
 // Command returns the files cobra command with all subcommands.
 func Command(ctx context.Context, profile *string) *cobra.Command {
 	var metadata string
+	var perf bool
 
 	parent := cobra.Command{
 		Use:   "files",
@@ -17,12 +18,13 @@ func Command(ctx context.Context, profile *string) *cobra.Command {
 	}
 
 	parent.PersistentFlags().StringVarP(&metadata, "metadata", "m", "", "Metadata in the format key=value,key2=value2 to be associated with the request")
+	parent.PersistentFlags().BoolVar(&perf, "perf", false, "Print a timing breakdown of the API requests the command made")
 
-	parent.AddCommand(processCommand(ctx, profile, &metadata))
-	parent.AddCommand(asyncCommand(ctx, profile, &metadata))
-	parent.AddCommand(fetchCommand(ctx, profile, &metadata))
-	parent.AddCommand(retrieveCommand(ctx, profile))
-	parent.AddCommand(traceCommand(ctx, profile))
+	parent.AddCommand(processCommand(ctx, profile, &metadata, &perf))
+	parent.AddCommand(asyncCommand(ctx, profile, &metadata, &perf))
+	parent.AddCommand(fetchCommand(ctx, profile, &metadata, &perf))
+	parent.AddCommand(retrieveCommand(ctx, profile, &perf))
+	parent.AddCommand(traceCommand(ctx, profile, &perf))
 
 	return &parent
 }
