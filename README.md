@@ -120,8 +120,6 @@ spinner until the result lands:
 ```
 
 ```
-2026-08-08 08:41:43.508  INFO 24068 : processed file path=/path/to/backup.tar status=201 request_id=req_9f3a1c
-
 # /path/to/backup.tar:
 
   id:             ff03467da11f417aa99845c91793ce0c
@@ -136,9 +134,14 @@ spinner until the result lands:
 ✔ Files with findings: 0, unable to process: 0 and successfully processed: 1
 ```
 
-Every request logs the `X-Scanii-Request-Id` the API returned. That id is what
-support needs to look a specific scan up on the server side, so it is reported
-whether or not anything went wrong.
+Every request records the `X-Scanii-Request-Id` the API returned — the id
+support needs to look a specific scan up on the server side. A request that
+failed quotes it in the error; otherwise `--perf` prints it, and `-v` logs it
+for every request:
+
+```
+2026-08-08 08:41:43.508 DEBUG 24068 internal/commands/file/common.go:38                : processed file path=/path/to/backup.tar status=201 request_id=req_9f3a1c
+```
 
 Asynchronous scan (returns immediately with a pending result ID):
 

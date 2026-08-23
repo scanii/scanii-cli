@@ -5,7 +5,7 @@
 ### Added
 
 - `--perf` on every `sc files` command — `process`, `async`, `fetch`, `retrieve` and `trace`. Prints a timing breakdown of the API requests the command made — DNS, TCP connect, TLS handshake, request transfer, server processing, response transfer, total, and the run's own overhead — so that a slow network can be told apart from a slow scan. A command that makes more than one request — a directory scan, or a `--wait` poll — reports the mean, plus how many of those requests reused a pooled connection. Phases that did not happen read `n/a` rather than `0 s`, as does a phase that finished inside the clock's resolution.
-- The `X-Scanii-Request-Id` of every file request is logged at info level, whether or not `--perf` was passed. It is the id support needs to look a scan up on the server side.
+- The `X-Scanii-Request-Id` of every file request is logged at debug level, whether or not the request succeeded. It is the id support needs to look a scan up on the server side; `--perf` prints it too, and a failed request already quoted it in its error.
 - `client.Timings`, captured with `net/http/httptrace` on every request and carried on `client.Response`, along with `Response.RequestID()` and the `client.RequestIDHeader` constant.
 - `profile.WithMaxConcurrency`, which sizes the connection pool of the client a profile builds. Commands that make a single request are unaffected and keep the transport's default.
 
@@ -15,8 +15,7 @@
 
 ### Changed
 
-- The console log handler is now installed on every run at info level, rather than only under `--verbose`, so that info-level output is styled like the rest of the CLI instead of falling through to slog's default handler. `--verbose` still selects debug level.
-- The log handler only emits ANSI styling when the destination is a terminal, so a piped or redirected run writes plain text. The fixed-width source column is likewise printed only when source reporting is on, instead of padding to fifty blanks.
+- The console log handler only emits ANSI styling when the destination is a terminal, so `sc -v ... > log.txt` writes plain text rather than escape codes. Its fixed-width source column is likewise printed only when source reporting is on, instead of padding to fifty blanks.
 - `Client.do` returns a `*Response` and the body rather than a status, headers and body triple, so that the timings ride along with the rest of the response metadata.
 
 ## [1.7.1]

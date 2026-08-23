@@ -29,12 +29,13 @@ type resultRecord struct {
 }
 
 // recordRequest carries the per-request diagnostics off the response. The
-// request id is what support needs to look a request up on the server side, so
-// it is logged whether or not the run asked for a performance summary.
+// request id is what support needs to look a request up on the server side, and
+// it is logged for every request rather than only the ones that failed — but at
+// debug level, since a directory run would otherwise log a line per file.
 func (r *resultRecord) recordRequest(resp *client.Response) {
 	r.requestID = resp.RequestID()
 	r.timings = resp.Timings
-	slog.Info("processed file", "path", r.path, "status", resp.StatusCode, "request_id", r.requestID)
+	slog.Debug("processed file", "path", r.path, "status", resp.StatusCode, "request_id", r.requestID)
 }
 
 // apiError builds an error from a non-success API response, preferring the
