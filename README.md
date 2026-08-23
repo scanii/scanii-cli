@@ -280,10 +280,16 @@ add up to `total`:
 | `tcp connect` | Opening the socket |
 | `tls handshake` | Negotiating TLS |
 | `request transfer` | Sending the request — for a scan, the upload |
-| `server processing` | The API's own work, from the last request byte to the first response byte |
-| `response transfer` | Reading the response body |
+| `server processing` | Last request byte out to first response byte back — the API's work *plus* the round trip carrying the question and the answer |
+| `response transfer` | First response byte to the last byte of the body |
 | `total` | The whole exchange |
 | `client overhead` | The rest of the run — reading and hashing the file, building the request, printing the result |
+
+`server processing` is measured from this end, so it cannot separate the API's
+work from the round trip it takes to ask and be answered; against a distant
+endpoint it reads higher than what the server reports for the same request, by
+about one round trip. It is the floor for a scan — `client overhead` and the
+three connection phases are the parts a caller can do something about.
 
 A phase that did not happen reads `n/a`: a pooled connection resolves no name
 and shakes no hands, and a plaintext endpoint never reaches the TLS phase. So

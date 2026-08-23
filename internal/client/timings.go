@@ -27,12 +27,20 @@ type Timings struct {
 	TLS time.Duration
 
 	// RequestTransfer is the time from having a usable connection to the last
-	// byte of the request going out on the wire. For a file upload that is the
-	// upload itself.
+	// byte of the request being written. For a file upload that is the upload
+	// itself — near enough, anyway: the write finishes at the socket rather than
+	// at the far end, so up to a send buffer's worth of it is still in flight.
 	RequestTransfer time.Duration
 
-	// ServerProcessing is the time between the last request byte and the first
-	// response byte — the API's own work, which for a file scan is the scan.
+	// ServerProcessing is the time between the last request byte going out and
+	// the first response byte coming back. That covers the API's own work — for
+	// a file scan, the scan — but also the round trip carrying the question
+	// there and the answer back, and nothing on this side can see where the one
+	// ends and the other begins. Expect it to read higher than whatever the
+	// server reports for the same request, by about one round trip.
+	//
+	// It is zero when the API answered before the request finished going out, as
+	// it does when it rejects an oversized upload part way through.
 	ServerProcessing time.Duration
 
 	// ResponseTransfer is the time from the first byte of the response to the
