@@ -23,6 +23,7 @@ func TestPerfReportMean(t *testing.T) {
 	report.add(&resultRecord{
 		requestID: "req_one",
 		timings: client.Timings{
+			Complete:         true,
 			DNS:              10 * time.Millisecond,
 			Connect:          2 * time.Millisecond,
 			TLS:              20 * time.Millisecond,
@@ -36,6 +37,7 @@ func TestPerfReportMean(t *testing.T) {
 	report.add(&resultRecord{
 		requestID: "req_two",
 		timings: client.Timings{
+			Complete:         true,
 			DNS:              20 * time.Millisecond,
 			Connect:          4 * time.Millisecond,
 			TLS:              40 * time.Millisecond,
@@ -81,8 +83,8 @@ func TestPerfReportEmpty(t *testing.T) {
 	if requests != 0 {
 		t.Fatalf("expected 0 requests, got %d", requests)
 	}
-	if mean.Measured() {
-		t.Fatalf("expected an unmeasured mean, got %+v", mean)
+	if mean.Total != 0 {
+		t.Fatalf("expected a zero mean, got %+v", mean)
 	}
 }
 
@@ -93,7 +95,7 @@ func TestPerfReportConcurrentAdd(t *testing.T) {
 	var wg sync.WaitGroup
 	for range 50 {
 		wg.Go(func() {
-			report.add(&resultRecord{timings: client.Timings{Total: 10 * time.Millisecond}})
+			report.add(&resultRecord{timings: client.Timings{Complete: true, Total: 10 * time.Millisecond}})
 		})
 	}
 	wg.Wait()

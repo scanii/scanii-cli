@@ -7,21 +7,14 @@ import (
 	"time"
 )
 
-func TestTimingsMeasured(t *testing.T) {
-	if (Timings{}).Measured() {
-		t.Fatal("expected the zero value to report as unmeasured")
-	}
-	if !(Timings{Total: time.Millisecond}).Measured() {
-		t.Fatal("expected a timed exchange to report as measured")
-	}
-}
-
 func TestElapsedIgnoresAnUnstartedPhase(t *testing.T) {
 	if got := elapsed(time.Time{}); got != 0 {
 		t.Fatalf("expected 0 for a phase that never started, got %s", got)
 	}
-	if got := elapsed(time.Now()); got <= 0 {
-		t.Fatalf("expected a positive duration, got %s", got)
+	// a phase that did start is measured however briefly it ran, so the clock's
+	// resolution is kept out of it by starting one a second ago
+	if got := elapsed(time.Now().Add(-time.Second)); got < time.Second {
+		t.Fatalf("expected at least a second, got %s", got)
 	}
 }
 
@@ -42,14 +35,13 @@ func TestDoTimesTheExchange(t *testing.T) {
 		t.Fatalf("ping failed: %s", err)
 	}
 
-	if !result.Timings.Measured() {
-		t.Fatal("expected the exchange to be timed")
+	// the phases of a loopback exchange can each finish inside the clock's
+	// resolution, so the flag is what says it was timed, not the durations
+	if !result.Timings.Complete {
+		t.Fatal("expected the exchange to be reported as complete")
 	}
-	if result.Timings.Total <= 0 {
-		t.Fatalf("expected a positive total, got %s", result.Timings.Total)
-	}
-	if result.Timings.RequestTransfer <= 0 {
-		t.Fatalf("expected a positive request transfer, got %s", result.Timings.RequestTransfer)
+	if result.Timings.Connect <= 0 {
+		t.Fatalf("expected a positive connect, got %s", result.Timings.Connect)
 	}
 	// httptest serves on a loopback address, so there is no name to resolve
 	if result.Timings.DNS != 0 {
@@ -94,5 +86,18 @@ func TestRequestIDIsEmptyWhenTheAPISendsNone(t *testing.T) {
 	r := Response{Header: http.Header{}}
 	if got := r.RequestID(); got != "" {
 		t.Fatalf("expected an empty request id, got %q", got)
+	}
+}
+
+func TestTimingsAreIncompleteUntilTheResponseIsRead(t *testing.T) {
+	if (Timings{}).Complete {
+		t.Fatal("expected the zero value to report as incomplete")
+	}
+
+	// every duration can legitimately be zero on a clock too coarse to see them
+	var tr tracer
+	tr.bodyRead()
+	if !tr.result().Complete {
+		t.Fatal("expected a read response to report as complete")
 	}
 }

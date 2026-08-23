@@ -4,7 +4,7 @@
 
 ### Added
 
-- `--perf` on `sc files process`. Prints a timing breakdown of the API requests a scan made — DNS, TCP connect, TLS handshake, request transfer, server processing, response transfer, total, and the run's own overhead — so that a slow network can be told apart from a slow scan. A directory scan makes one request per file and reports the mean, plus how many of those requests reused a pooled connection. Phases that did not happen read `n/a` rather than `0 s`.
+- `--perf` on `sc files process`. Prints a timing breakdown of the API requests a scan made — DNS, TCP connect, TLS handshake, request transfer, server processing, response transfer, total, and the run's own overhead — so that a slow network can be told apart from a slow scan. A directory scan makes one request per file and reports the mean, plus how many of those requests reused a pooled connection. Phases that did not happen read `n/a` rather than `0 s`, as does a phase that finished inside the clock's resolution.
 - The `X-Scanii-Request-Id` of every file request is logged at info level, whether or not `--perf` was passed. It is the id support needs to look a scan up on the server side.
 - `client.Timings`, captured with `net/http/httptrace` on every request and carried on `client.Response`, along with `Response.RequestID()` and the `client.RequestIDHeader` constant.
 

@@ -26,11 +26,10 @@ type perfReport struct {
 	total     client.Timings
 }
 
-// add records the timings of one request. Records for a request that never
-// reached the server carry nothing to report and are left out rather than
-// averaged in as zeroes.
+// add records the timings of one request. A request that never reached the API
+// carries nothing to report and is left out rather than averaged in as zeroes.
 func (p *perfReport) add(record *resultRecord) {
-	if !record.timings.Measured() {
+	if !record.timings.Complete {
 		return
 	}
 

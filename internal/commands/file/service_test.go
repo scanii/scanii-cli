@@ -373,11 +373,8 @@ func TestServiceRecordsRequestDiagnostics(t *testing.T) {
 			if r.requestID == "" {
 				t.Fatal("expected the request id to be recorded")
 			}
-			if !r.timings.Measured() {
-				t.Fatal("expected the exchange to be timed")
-			}
-			if r.timings.Total <= 0 {
-				t.Fatalf("expected a positive total, got %s", r.timings.Total)
+			if !r.timings.Complete {
+				t.Fatal("expected the exchange to be reported as complete")
 			}
 		})
 	}

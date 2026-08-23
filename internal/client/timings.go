@@ -13,7 +13,9 @@ import (
 //
 // A phase that did not happen is reported as zero: a pooled connection resolves
 // no name, opens no socket and shakes no hands, and a plaintext endpoint never
-// reaches the TLS phase.
+// reaches the TLS phase. So is one that finished inside the clock's resolution,
+// which the two cases cannot be told apart by — a distinction that does not
+// matter for the latencies this is meant to expose.
 type Timings struct {
 	// DNS is the time spent resolving the host name.
 	DNS time.Duration
@@ -44,12 +46,13 @@ type Timings struct {
 	// Reused reports whether the exchange rode on a pooled connection, which is
 	// why the phases that establish one can legitimately read as zero.
 	Reused bool
-}
 
-// Measured reports whether the exchange was timed at all, which is false when
-// the request never made it to the server.
-func (t Timings) Measured() bool {
-	return t != Timings{}
+	// Complete reports whether the exchange reached the API and its response was
+	// read. It is a flag rather than something inferred from the durations,
+	// because every one of them can legitimately be zero: a phase that finishes
+	// inside the clock's resolution measures as no time at all, and Windows
+	// resolves time in milliseconds.
+	Complete bool
 }
 
 // tracer collects the Timings of one request. Its hooks run on the transport's
@@ -135,6 +138,7 @@ func (t *tracer) bodyRead() {
 	defer t.mu.Unlock()
 	t.timings.ResponseTransfer = elapsed(t.firstByte)
 	t.timings.Total = elapsed(t.start)
+	t.timings.Complete = true
 }
 
 // result reports the timings collected so far.

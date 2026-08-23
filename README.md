@@ -280,7 +280,9 @@ add up to `total`:
 | `client overhead` | The rest of the run — reading and hashing the file, building the request, printing the result |
 
 A phase that did not happen reads `n/a`: a pooled connection resolves no name
-and shakes no hands, and a plaintext endpoint never reaches the TLS phase.
+and shakes no hands, and a plaintext endpoint never reaches the TLS phase. So
+does a phase that finished inside the clock's resolution, which on Windows is a
+millisecond — not a distinction that matters for the latencies this is for.
 
 A directory scan makes one request per file, so it reports the mean instead, and
 counts how many of those requests rode on a connection that was already open:
