@@ -117,6 +117,60 @@ func TestRetrieveTrace_UnknownID(t *testing.T) {
 	}
 }
 
+// TestDeleteFile_KnownID verifies that DELETE /v2.2/files/{id} removes a known
+// processing result and returns 204, and that a subsequent GET returns 404.
+func TestDeleteFile_KnownID(t *testing.T) {
+	ts := startServer(t)
+
+	body, ctype := multipartBody(t, nil, []byte("delete me"))
+	resp, err := http.DefaultClient.Do(authReq(t, ts.URL+"/v2.2/files", body, ctype))
+	if err != nil {
+		t.Fatalf("process: %s", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		raw, _ := io.ReadAll(resp.Body)
+		t.Fatalf("process status: want 201, got %d: %s", resp.StatusCode, raw)
+	}
+
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created: %s", err)
+	}
+
+	deleteReq, err := http.NewRequestWithContext(t.Context(), http.MethodDelete, ts.URL+"/v2.2/files/"+created.ID, http.NoBody)
+	if err != nil {
+		t.Fatalf("new delete request: %s", err)
+	}
+	deleteReq.SetBasicAuth("key", "secret")
+	deleteResp, err := http.DefaultClient.Do(deleteReq)
+	if err != nil {
+		t.Fatalf("delete: %s", err)
+	}
+	defer deleteResp.Body.Close()
+	if deleteResp.StatusCode != http.StatusNoContent {
+		raw, _ := io.ReadAll(deleteResp.Body)
+		t.Fatalf("delete status: want 204, got %d: %s", deleteResp.StatusCode, raw)
+	}
+
+	getReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/v2.2/files/"+created.ID, http.NoBody)
+	if err != nil {
+		t.Fatalf("new retrieve request: %s", err)
+	}
+	getReq.SetBasicAuth("key", "secret")
+	getResp, err := http.DefaultClient.Do(getReq)
+	if err != nil {
+		t.Fatalf("retrieve after delete: %s", err)
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusNotFound {
+		raw, _ := io.ReadAll(getResp.Body)
+		t.Fatalf("retrieve-after-delete status: want 404, got %d: %s", getResp.StatusCode, raw)
+	}
+}
+
 // TestProcessFile_LocationOnly verifies that POST /v2.2/files with a location field
 // (and no file) fetches the URL, scans it, and returns 201 with a ProcessingResponse.
 // Uses the server's own /static/eicar.txt so no external network access is required.
