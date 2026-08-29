@@ -53,6 +53,20 @@ func callFileDelete(ctx context.Context, c *client.Client, id string, timings *p
 
 	slog.Debug("deleting file", "id", id)
 
+	retrieveResp, err := c.RetrieveFile(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	if timings != nil {
+		timings.addResponse(&retrieveResp.Response)
+	}
+	if retrieveResp.StatusCode == http.StatusNotFound {
+		return false, fmt.Errorf("no processing result exists for id %s", id)
+	}
+	if retrieveResp.StatusCode != http.StatusOK {
+		return false, apiError(retrieveResp.StatusCode, retrieveResp.Header, nil)
+	}
+
 	resp, err := c.DeleteFile(ctx, id)
 	if err != nil {
 		return false, err

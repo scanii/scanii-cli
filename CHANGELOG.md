@@ -7,6 +7,10 @@
 - `DELETE /v2.2/files/{id}` support in the mock server and client. Hard-deletes a previously processed file result and its trace, returning `204 No Content` on success.
 - `sc files delete <id>` — delete a previously created processing result and its trace through the CLI.
 
+### Fixed
+
+- `sc files delete <id>` now fails when the id does not exist, instead of printing a successful deletion message.
+
 ## [1.10.0]
 
 ### Added
