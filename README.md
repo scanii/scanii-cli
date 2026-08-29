@@ -103,6 +103,12 @@ Synchronous scan (blocks until the result is ready):
 sc files process /path/to/file.pdf
 ```
 
+Delete a processed result once you no longer need it:
+
+```shell
+sc files delete RESULT_ID
+```
+
 Progress is measured in bytes as they go out on the wire, so a large file
 advances smoothly while it uploads:
 
@@ -689,6 +695,7 @@ When using the local server (Docker or binary), the default credentials are:
 | `sc files async <path>` | Asynchronous file/directory scan |
 | `sc files fetch <url>` | Fetch and scan a remote URL |
 | `sc files retrieve <id>` | Retrieve a scan result |
+| `sc files delete <id>` | Delete a scan result and its trace |
 | `sc files trace <id>` | Retrieve the processing trace for a scan result |
 | `sc auth-token create` | Create a temporary auth token |
 | `sc auth-token retrieve <id>` | Retrieve token details |

@@ -117,6 +117,31 @@ func TestCallFileRetrieveEmptyID(t *testing.T) {
 	}
 }
 
+func TestCallFileDelete(t *testing.T) {
+	client, err := ts.Profile.Client()
+	if err != nil {
+		t.Fatalf("failed to create client: %s", err)
+	}
+
+	result, err := runLocationProcess(context.Background(), client, fmt.Sprintf("http://%s/static/eicar.txt", ts.Endpoint), "", "")
+	if err != nil {
+		t.Fatalf("failed to process file: %s", err)
+	}
+
+	ok, err := callFileDelete(context.Background(), client, result.id, nil)
+	if err != nil {
+		t.Fatalf("failed to delete file: %s", err)
+	}
+	if !ok {
+		t.Fatal("expected delete call to succeed")
+	}
+
+	_, err = callFileRetrieve(context.Background(), client, result.id, 0, nil)
+	if err == nil {
+		t.Fatal("expected retrieve after delete to fail")
+	}
+}
+
 func TestAPIError(t *testing.T) {
 	message := "File is too large"
 	withRequestID := http.Header{client.RequestIDHeader: {"req_abc123"}}
