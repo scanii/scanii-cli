@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.11.1]
+
+### Added
+
+- `sc files delete <id>` — delete a previously created processing result and its trace through the CLI.
+
 ## [1.10.0]
 
 ### Added
