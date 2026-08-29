@@ -252,6 +252,25 @@ func (h FakeHandler) RetrieveFile(w http.ResponseWriter, _ *http.Request, id str
 	}
 }
 
+func (h FakeHandler) DeleteFile(w http.ResponseWriter, _ *http.Request, id string) {
+	if id == "" {
+		h.renderClientError(http.StatusBadRequest, w, errorArgMissing)
+		return
+	}
+
+	found, err := h.store.remove(id)
+	if !found {
+		h.renderClientError(http.StatusNotFound, w, "could not find processing result")
+		return
+	}
+	if err != nil {
+		h.renderServerError(w, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h FakeHandler) Ping(w http.ResponseWriter, r *http.Request) {
 	key := r.Context().Value(keyInContext).(string)
 

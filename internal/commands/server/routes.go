@@ -135,6 +135,9 @@ func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL st
 	mux.Handle("POST /v2.2/files/async", wrap(handlers.ProcessFileAsync))
 	mux.Handle("POST /v2.2/files/fetch", wrap(handlers.ProcessFileFetch))
 	mux.Handle("POST /v2.2/files", wrap(handlers.ProcessFile))
+	mux.Handle("DELETE /v2.2/files/{id}", wrap(func(w http.ResponseWriter, r *http.Request) {
+		handlers.DeleteFile(w, r, r.PathValue("id"))
+	}))
 	mux.Handle("GET /v2.2/files/{id}/trace", wrap(func(w http.ResponseWriter, r *http.Request) {
 		handlers.RetrieveTrace(w, r, r.PathValue("id"))
 	}))

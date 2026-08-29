@@ -398,6 +398,7 @@ All endpoints are under the `/v2.2/` prefix and require HTTP Basic Auth:
 | `POST` | `/v2.2/files/async` | Async file scan (returns pending ID) |
 | `POST` | `/v2.2/files/fetch` | Fetch remote URL and scan |
 | `GET` | `/v2.2/files/{id}` | Retrieve scan result |
+| `DELETE` | `/v2.2/files/{id}` | Hard-delete scan result and trace |
 | `GET` | `/v2.2/files/{id}/trace` | Retrieve processing trace |
 | `POST` | `/v2.2/auth/tokens` | Create auth token |
 | `GET` | `/v2.2/auth/tokens/{id}` | Retrieve auth token |
