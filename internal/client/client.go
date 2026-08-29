@@ -295,12 +295,12 @@ func (c *Client) RetrieveFile(ctx context.Context, id string) (*RetrieveFileResu
 }
 
 // DeleteFile hard-deletes a previously processed file result.
-func (c *Client) DeleteFile(ctx context.Context, id string) (*Response, error) {
-	status, header, _, err := c.do(ctx, http.MethodDelete, "/files/"+id, "", nil)
+func (c *Client) DeleteFile(ctx context.Context, id string) (*DeleteFileResult, error) {
+	resp, _, err := c.do(ctx, http.MethodDelete, "/files/"+id, "", nil)
 	if err != nil {
 		return nil, err
 	}
-	return &Response{StatusCode: status, Header: header}, nil
+	return &DeleteFileResult{Response: *resp}, nil
 }
 
 // RetrieveTrace retrieves the processing trace for a previously processed file.
