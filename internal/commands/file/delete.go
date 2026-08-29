@@ -16,7 +16,7 @@ import (
 func deleteCommand(ctx context.Context, profileName *string, perf *bool) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:        "delete [flags] [id]",
-		Short:      "Delete a previously created processing result",
+		Short:      "Delete a previously created processing result and its trace",
 		Args:       cobra.ExactArgs(1),
 		ArgAliases: []string{"id"},
 		RunE: func(_ *cobra.Command, args []string) error {
@@ -38,7 +38,7 @@ func deleteCommand(ctx context.Context, profileName *string, perf *bool) *cobra.
 			if err != nil {
 				return err
 			}
-			terminal.Success(fmt.Sprintf("Processing result %s deleted", args[0]))
+			terminal.Success(fmt.Sprintf("Processing result %s and its trace deleted", args[0]))
 			return nil
 		},
 	}
