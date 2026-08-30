@@ -25,6 +25,7 @@ func Command(ctx context.Context, profile *string) *cobra.Command {
 	parent.AddCommand(fetchCommand(ctx, profile, &metadata, &perf))
 	parent.AddCommand(retrieveCommand(ctx, profile, &perf))
 	parent.AddCommand(deleteCommand(ctx, profile, &perf))
+	parent.AddCommand(deleteTraceCommand(ctx, profile, &perf))
 	parent.AddCommand(traceCommand(ctx, profile, &perf))
 
 	return &parent
