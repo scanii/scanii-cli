@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.12.0] — 2026-08-30
+
+### Added
+
+- Separate processing-trace deletion support in the mock server and client via
+  `DELETE /v2.2/files/{id}/trace`.
+- `sc files delete-trace <id>` — delete a processing trace independently of its
+  processing result.
+
+### Changed
+
+- `DELETE /v2.2/files/{id}` now deletes only the processing result. The trace
+  remains available until it is explicitly deleted with `delete-trace`.
+
 ## [1.11.1]
 
 ### Added
