@@ -124,6 +124,11 @@ type DeleteFileResult struct {
 	Response
 }
 
+// DeleteFileTraceResult is the response from the trace delete endpoint.
+type DeleteFileTraceResult struct {
+	Response
+}
+
 // CreateTokenResult is the response from the create token endpoint.
 type CreateTokenResult struct {
 	Response
@@ -301,6 +306,15 @@ func (c *Client) DeleteFile(ctx context.Context, id string) (*DeleteFileResult, 
 		return nil, err
 	}
 	return &DeleteFileResult{Response: *resp}, nil
+}
+
+// DeleteFileTrace deletes the processing trace for a previously processed file.
+func (c *Client) DeleteFileTrace(ctx context.Context, id string) (*DeleteFileTraceResult, error) {
+	resp, _, err := c.do(ctx, http.MethodDelete, "/files/"+id+"/trace", "", nil)
+	if err != nil {
+		return nil, err
+	}
+	return &DeleteFileTraceResult{Response: *resp}, nil
 }
 
 // RetrieveTrace retrieves the processing trace for a previously processed file.

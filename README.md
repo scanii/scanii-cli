@@ -404,8 +404,9 @@ All endpoints are under the `/v2.2/` prefix and require HTTP Basic Auth:
 | `POST` | `/v2.2/files/async` | Async file scan (returns pending ID) |
 | `POST` | `/v2.2/files/fetch` | Fetch remote URL and scan |
 | `GET` | `/v2.2/files/{id}` | Retrieve scan result |
-| `DELETE` | `/v2.2/files/{id}` | Hard-delete scan result and trace |
+| `DELETE` | `/v2.2/files/{id}` | Delete scan result |
 | `GET` | `/v2.2/files/{id}/trace` | Retrieve processing trace |
+| `DELETE` | `/v2.2/files/{id}/trace` | Delete processing trace |
 | `POST` | `/v2.2/auth/tokens` | Create auth token |
 | `GET` | `/v2.2/auth/tokens/{id}` | Retrieve auth token |
 | `DELETE` | `/v2.2/auth/tokens/{id}` | Delete auth token |
@@ -695,7 +696,8 @@ When using the local server (Docker or binary), the default credentials are:
 | `sc files async <path>` | Asynchronous file/directory scan |
 | `sc files fetch <url>` | Fetch and scan a remote URL |
 | `sc files retrieve <id>` | Retrieve a scan result |
-| `sc files delete <id>` | Delete a scan result and its trace |
+| `sc files delete <id>` | Delete a scan result |
+| `sc files delete-trace <id>` | Delete a scan result's processing trace |
 | `sc files trace <id>` | Retrieve the processing trace for a scan result |
 | `sc auth-token create` | Create a temporary auth token |
 | `sc auth-token retrieve <id>` | Retrieve token details |

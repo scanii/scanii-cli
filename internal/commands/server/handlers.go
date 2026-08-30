@@ -102,6 +102,10 @@ func (h FakeHandler) ProcessFileAsync(w http.ResponseWriter, r *http.Request) {
 		h.renderServerError(w, err.Error())
 		return
 	}
+	if err = h.store.save("trace-"+id, &result); err != nil {
+		h.renderServerError(w, err.Error())
+		return
+	}
 
 	if result.ContentLength == 0 {
 		h.renderClientError(http.StatusBadRequest, w, errorNoFileSent)
@@ -185,6 +189,10 @@ func (h FakeHandler) ProcessFileFetch(w http.ResponseWriter, r *http.Request) {
 	result.Metadata = metadata
 	err = h.store.save(id, &result)
 	if err != nil {
+		h.renderServerError(w, err.Error())
+		return
+	}
+	if err = h.store.save("trace-"+id, &result); err != nil {
 		h.renderServerError(w, err.Error())
 		return
 	}
@@ -493,6 +501,10 @@ func (h FakeHandler) ProcessFile(w http.ResponseWriter, r *http.Request) {
 		h.renderServerError(w, err.Error())
 		return
 	}
+	if err = h.store.save("trace-"+id, &result); err != nil {
+		h.renderServerError(w, err.Error())
+		return
+	}
 
 	if result.ContentLength == 0 {
 		h.renderClientError(http.StatusBadRequest, w, errorNoFileSent)
@@ -521,7 +533,7 @@ func (h FakeHandler) ProcessFile(w http.ResponseWriter, r *http.Request) {
 }
 func (h FakeHandler) RetrieveTrace(w http.ResponseWriter, _ *http.Request, id string) {
 	result := engine.Result{}
-	if err := h.store.load(id, &result); err != nil {
+	if err := h.store.load("trace-"+id, &result); err != nil {
 		h.renderClientError(http.StatusNotFound, w, fmt.Sprintf("No trace exists for processing id %s", id))
 		return
 	}
@@ -549,6 +561,23 @@ func (h FakeHandler) RetrieveTrace(w http.ResponseWriter, _ *http.Request, id st
 	if err := writeJSON(w, http.StatusOK, resp, nil); err != nil {
 		h.renderServerError(w, err.Error())
 	}
+}
+
+func (h FakeHandler) DeleteTrace(w http.ResponseWriter, _ *http.Request, id string) {
+	if id == "" {
+		h.renderClientError(http.StatusBadRequest, w, errorArgMissing)
+		return
+	}
+	found, err := h.store.remove("trace-" + id)
+	if err != nil {
+		h.renderServerError(w, err.Error())
+		return
+	}
+	if !found {
+		h.renderClientError(http.StatusNotFound, w, fmt.Sprintf("No trace exists for processing id %s", id))
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h FakeHandler) renderServerError(w http.ResponseWriter, message string) {

@@ -169,6 +169,20 @@ func TestDeleteFile_KnownID(t *testing.T) {
 		raw, _ := io.ReadAll(getResp.Body)
 		t.Fatalf("retrieve-after-delete status: want 404, got %d: %s", getResp.StatusCode, raw)
 	}
+
+	traceReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/v2.2/files/"+created.ID+"/trace", http.NoBody)
+	if err != nil {
+		t.Fatalf("new trace request: %s", err)
+	}
+	traceReq.SetBasicAuth("key", "secret")
+	traceResp, err := http.DefaultClient.Do(traceReq)
+	if err != nil {
+		t.Fatalf("retrieve trace after delete: %s", err)
+	}
+	defer traceResp.Body.Close()
+	if traceResp.StatusCode != http.StatusOK {
+		t.Fatalf("trace-after-delete status: want 200, got %d", traceResp.StatusCode)
+	}
 }
 
 // TestProcessFile_LocationOnly verifies that POST /v2.2/files with a location field

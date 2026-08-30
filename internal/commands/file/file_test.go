@@ -142,6 +142,21 @@ func TestCallFileDelete(t *testing.T) {
 	}
 }
 
+func TestCallFileDeleteUnknownID(t *testing.T) {
+	client, err := ts.Profile.Client()
+	if err != nil {
+		t.Fatalf("failed to create client: %s", err)
+	}
+
+	ok, err := callFileDelete(context.Background(), client, "3a6db2244984342da20767e4a7a60922sdsd", nil)
+	if err == nil {
+		t.Fatal("expected unknown-id delete to fail")
+	}
+	if ok {
+		t.Fatal("expected unknown-id delete to return false")
+	}
+}
+
 func TestAPIError(t *testing.T) {
 	message := "File is too large"
 	withRequestID := http.Header{client.RequestIDHeader: {"req_abc123"}}
