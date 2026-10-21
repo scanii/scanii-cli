@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- A binary installed with `go install` now reports its version without the tag's leading `v` — `scanii-cli/1.12.0`, not `scanii-cli/v1.12.0` — matching released builds in both the `User-Agent` header and `sc version` ([#102](https://github.com/scanii/scanii-cli/issues/102)). Requests still carrying `github.com/uvasoftware/scanii-cli/v` come from a binary older than 1.8.0, where that header was fixed; upgrading (or re-pulling `ghcr.io/scanii/scanii-cli:latest`) resolves them.
+
 ## [1.12.0]
 
 ### Added

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"runtime"
 	"runtime/debug"
+	"strings"
 )
 
 // These variables are set in the build step via -ldflags -X.
@@ -38,9 +39,13 @@ func Version() string {
 // resolveVersion derives a version from build info, in descending order of
 // precision: the module version (a tag or a pseudo-version), then the VCS
 // revision, then a placeholder.
+//
+// Module versions carry the tag's leading "v" (v1.12.0) while release builds
+// carry goreleaser's bare version (1.12.0); the prefix is dropped so that a
+// `go install`ed binary identifies itself the same way a released one does.
 func resolveVersion(bi *debug.BuildInfo) string {
 	if v := bi.Main.Version; v != "" && v != "(devel)" {
-		return v
+		return strings.TrimPrefix(v, "v")
 	}
 
 	var revision string

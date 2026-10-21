@@ -41,12 +41,17 @@ func TestResolveVersion(t *testing.T) {
 			want: testVersion,
 		},
 		{
+			name: "tagged module version drops the v prefix",
+			bi:   &debug.BuildInfo{Main: debug.Module{Version: "v" + testVersion}},
+			want: testVersion,
+		},
+		{
 			name: "module pseudo version",
 			bi: &debug.BuildInfo{
 				Main:     debug.Module{Version: "v0.0.0-20260808122403-f0b7c8384bac"},
 				Settings: []debug.BuildSetting{revision, clean},
 			},
-			want: "v0.0.0-20260808122403-f0b7c8384bac",
+			want: "0.0.0-20260808122403-f0b7c8384bac",
 		},
 		{
 			name: "clean checkout falls back to the short revision",
