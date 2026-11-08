@@ -69,10 +69,6 @@ lint:
 	go $(GOTOOL) gosec -quiet $(TAGS) -exclude=$(GOSEC_EXCLUDE) ./...
 	go $(GOTOOL) $(LICENSE_CHECK)
 
-# tools/go.mod needs Go 1.27 while CI's test check runs the Go 1.26 the release builds with, so
-# test/ci lets go fetch the 1.27 toolchain for the tools module's tidy check.
-test/ci: export GOTOOLCHAIN := auto
-
 ## test/ci: module hygiene (both modules) and the race suite, what CI's test check runs on Linux, macOS and Windows
 .PHONY: test/ci
 test/ci:
