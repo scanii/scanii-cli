@@ -4,7 +4,7 @@
 
 ### Changed
 
-- `sc server` listens on `127.0.0.1:4000` by default instead of `0.0.0.0:4000`, so a server started for local testing is no longer reachable from the network. Pass `--address 0.0.0.0:4000`, or set the new `SC_SERVER_ADDRESS` variable, to listen on every interface. The Docker image sets both, so `docker run -p 4000:4000 ghcr.io/scanii/scanii-cli` and `docker run ... server` behave as before.
+- `sc server` listens on `localhost:4000` by default instead of `0.0.0.0:4000`, so a server started for local testing is no longer reachable from the network. A `localhost` address binds both `127.0.0.1` and `::1`, so clients that resolve `localhost` to either keep connecting. Pass `--address 0.0.0.0:4000`, or set the new `SC_SERVER_ADDRESS` variable, to listen on every interface. The Docker image sets both, so `docker run -p 4000:4000 ghcr.io/scanii/scanii-cli` and `docker run ... server` behave as before.
 - `sc server` auth tokens are kept apart from processing results: only an id returned by `POST /v2.2/auth/tokens` authenticates, and only until its expiration date. Tokens created by an earlier version, in a reused `--data` directory, are no longer recognized.
 
 ### Fixed

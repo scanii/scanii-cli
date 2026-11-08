@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/httplog/v2"
@@ -85,9 +86,11 @@ func RunServer(flags *Flags) error {
 		eng.SetCallbackWait(*flags.CallBackWait)
 	}
 
-	if err := Setup(mux, eng, flags.Key, flags.Secret, flags.Data, "http://"+flags.Address); err != nil {
+	storage, err := Setup(mux, eng, flags.Key, flags.Secret, flags.Data, "http://"+flags.Address)
+	if err != nil {
 		return err
 	}
+	defer func() { _ = storage.Close() }()
 
 	// wrap the mux with request logging middleware
 	logger := httplog.NewLogger("sc", httplog.Options{
@@ -126,20 +129,51 @@ func RunServer(flags *Flags) error {
 	fmt.Println()
 	terminal.Warn("This server is for testing purposes only files aren't really analyzed.")
 
-	listen, err := net.Listen("tcp", flags.Address)
+	listeners, err := listen(flags.Address)
 	if err != nil {
-		return fmt.Errorf("listening on %s: %w", flags.Address, err)
+		return err
 	}
 
 	if flags.ReadyChan != nil {
 		flags.ReadyChan <- true
 	}
 
-	if err := srv.Serve(listen); err != nil {
-		return fmt.Errorf("serving: %w", err)
+	errs := make(chan error, len(listeners))
+	for _, l := range listeners {
+		go func() { errs <- srv.Serve(l) }()
+	}
+	// the first listener to fail takes the others down with it
+	err = <-errs
+	_ = srv.Close()
+	return fmt.Errorf("serving: %w", err)
+}
+
+// listen binds address. A "localhost" host binds both loopback addresses, so
+// that clients which resolve localhost to ::1 first and do not fall back to
+// IPv4 still connect; net.Listen alone would bind only one of them. The IPv6
+// one is best effort, for hosts without IPv6 loopback.
+func listen(address string) ([]net.Listener, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil || host != "localhost" {
+		l, err := net.Listen("tcp", address)
+		if err != nil {
+			return nil, fmt.Errorf("listening on %s: %w", address, err)
+		}
+		return []net.Listener{l}, nil
 	}
 
-	return nil
+	v4, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", port))
+	if err != nil {
+		return nil, fmt.Errorf("listening on %s: %w", address, err)
+	}
+	// a port of 0 picks one on IPv4; IPv6 has to use the same
+	port = strconv.Itoa(v4.Addr().(*net.TCPAddr).Port)
+	v6, err := net.Listen("tcp", net.JoinHostPort("::1", port))
+	if err != nil {
+		slog.Debug("not listening on IPv6 loopback", "error", err)
+		return []net.Listener{v4}, nil
+	}
+	return []net.Listener{v4, v6}, nil
 }
 
 // loadEngineConfig replaces the engine's built-in rules with the config file at
@@ -168,9 +202,10 @@ func serverEICAR(w http.ResponseWriter, _ *http.Request) {
 }
 
 // defaultAddress is where the server listens unless --address or the
-// addressEnv variable says otherwise: loopback only, so that a server started
-// for local testing is not reachable from the network.
-const defaultAddress = "127.0.0.1:4000"
+// addressEnv variable says otherwise: the IPv4 and IPv6 loopback addresses
+// only, so that a server started for local testing is not reachable from the
+// network.
+const defaultAddress = "localhost:4000"
 
 // addressEnv overrides defaultAddress. The container image sets it to
 // 0.0.0.0:4000, so that `docker run ... server` keeps answering on its

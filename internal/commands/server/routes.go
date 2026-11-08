@@ -52,11 +52,12 @@ func CORS(next http.Handler) http.Handler {
 }
 
 // Setup registers the mock API's routes on mux, keeping records in the data
-// directory. It fails only if that directory cannot be opened.
-func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL string) error {
+// directory. It fails only if that directory cannot be opened. The returned
+// closer releases the directory; Windows cannot remove it while it is open.
+func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL string) (io.Closer, error) {
 	st, err := newStore(data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	handlers := FakeHandler{
 		engine:  eng,
@@ -160,7 +161,7 @@ func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL st
 		handlers.DeleteToken(w, r, r.PathValue("id"))
 	}))
 
-	return nil
+	return st.root, nil
 }
 
 // validToken reports whether id names an auth token that exists and has not

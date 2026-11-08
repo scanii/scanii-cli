@@ -107,9 +107,13 @@ func startServerIn(t *testing.T, data string) *httptest.Server {
 	// we pass it after the listener is bound.
 	ts.Start()
 	t.Cleanup(ts.Close)
-	if err := Setup(mux, eng, "key", "secret", data, ts.URL); err != nil {
+	storage, err := Setup(mux, eng, "key", "secret", data, ts.URL)
+	if err != nil {
 		t.Fatalf("Setup: %s", err)
 	}
+	// cleanups run last-in first-out: this closes the data directory before
+	// the TempDir cleanup removes it, which Windows requires
+	t.Cleanup(func() { _ = storage.Close() })
 	return ts
 }
 
