@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- `sc server`'s router, `github.com/go-chi/chi/v5`, is updated from 5.3.0 to 5.4.0 for CVE-2026-114437 (#104).
 - `sc server` only reads, writes and deletes records inside its data directory, and answers `404` for ids it could not have issued.
 - `sc server` answers `400` instead of crashing the request when `POST /v2.2/files/fetch` cannot reach the location.
 - `sc server` answers `500` rather than `404` when a record exists but cannot be read or deleted.
