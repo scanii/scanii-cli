@@ -84,7 +84,7 @@ test/ci:
 ## test/e2e: build sc, start sc server on SC_E2E_PORT (default 4101) and run real sc commands against it
 .PHONY: test/e2e
 test/e2e:
-	go test $(TAGS) -count=1 -v -timeout 10m ./e2e
+	go test $(TAGS) -count=1 -v -timeout 5m ./e2e
 
 ## audit: lint plus module hygiene and the race suite
 .PHONY: audit
