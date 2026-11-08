@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -146,4 +147,42 @@ func TestCallbackWaitFlagOverridesEngineConfig(t *testing.T) {
 
 func ptr[T any](v T) *T {
 	return &v
+}
+
+func TestCommandDefaultAddress(t *testing.T) {
+	t.Setenv(addressEnv, "")
+	if got := Command().PersistentFlags().Lookup("address").DefValue; got != "localhost:4000" {
+		t.Fatalf("default address: want localhost:4000, got %s", got)
+	}
+
+	t.Setenv(addressEnv, "0.0.0.0:4000")
+	if got := Command().PersistentFlags().Lookup("address").DefValue; got != "0.0.0.0:4000" {
+		t.Fatalf("default address with %s set: want 0.0.0.0:4000, got %s", addressEnv, got)
+	}
+}
+
+func TestListenLocalhostBindsLoopbackOnly(t *testing.T) {
+	listeners, err := listen("localhost:0")
+	if err != nil {
+		t.Fatalf("listen: %s", err)
+	}
+	t.Cleanup(func() {
+		for _, l := range listeners {
+			_ = l.Close()
+		}
+	})
+
+	port := listeners[0].Addr().(*net.TCPAddr).Port
+	for _, l := range listeners {
+		addr := l.Addr().(*net.TCPAddr)
+		if !addr.IP.IsLoopback() {
+			t.Errorf("listening on %s, want a loopback address", addr)
+		}
+		if addr.Port != port {
+			t.Errorf("listening on %s, want port %d", addr, port)
+		}
+	}
+	if len(listeners) == 2 && listeners[1].Addr().(*net.TCPAddr).IP.To4() != nil {
+		t.Errorf("second listener %s, want IPv6", listeners[1].Addr())
+	}
 }

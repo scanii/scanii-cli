@@ -375,6 +375,8 @@ We also provide fake sample files you can use to trigger findings:
   content.malicious.local-test-file: http://localhost:4000/static/samples/malware
 ```
 
+The server listens on the loopback addresses only (`127.0.0.1` and `::1`), so it is reachable from the machine it runs on and nowhere else. To accept connections from other hosts, pass `--address 0.0.0.0:4000` or set `SC_SERVER_ADDRESS`; the Docker image already does, so a published container port keeps working.
+
 Default credentials are `key` / `secret`. Override them with flags:
 
 ```shell
@@ -385,7 +387,7 @@ sc server --key my-key --secret my-secret --address 0.0.0.0:8080
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-a, --address` | `localhost:4000` | Listen address |
+| `-a, --address` | `localhost:4000` | Listen address; `$SC_SERVER_ADDRESS` replaces the default when set |
 | `-k, --key` | `key` | API key |
 | `-s, --secret` | `secret` | API secret |
 | `-e, --engine` | built-in | Path to a custom engine rules JSON file |

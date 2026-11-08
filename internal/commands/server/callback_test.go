@@ -90,6 +90,13 @@ func (r *callbackReceiver) count() int {
 // the same wiring as RunServer but without the CLI terminal output.
 func startServer(t *testing.T) *httptest.Server {
 	t.Helper()
+	return startServerIn(t, t.TempDir())
+}
+
+// startServerIn is startServer with the data directory chosen by the caller,
+// for tests that look at what the server keeps on disk.
+func startServerIn(t *testing.T, data string) *httptest.Server {
+	t.Helper()
 	eng, err := engine.New()
 	if err != nil {
 		t.Fatalf("engine.New: %s", err)
@@ -100,7 +107,13 @@ func startServer(t *testing.T) *httptest.Server {
 	// we pass it after the listener is bound.
 	ts.Start()
 	t.Cleanup(ts.Close)
-	Setup(mux, eng, "key", "secret", t.TempDir(), ts.URL)
+	storage, err := Setup(mux, eng, "key", "secret", data, ts.URL)
+	if err != nil {
+		t.Fatalf("Setup: %s", err)
+	}
+	// cleanups run last-in first-out: this closes the data directory before
+	// the TempDir cleanup removes it, which Windows requires
+	t.Cleanup(func() { _ = storage.Close() })
 	return ts
 }
 

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"runtime/debug"
@@ -97,12 +98,12 @@ func (h FakeHandler) ProcessFileAsync(w http.ResponseWriter, r *http.Request) {
 	result.Metadata = metadata
 
 	slog.Debug("saving result")
-	err = h.store.save(id, &result)
+	err = h.store.save(kindResult, id, &result)
 	if err != nil {
 		h.renderServerError(w, err.Error())
 		return
 	}
-	if err = h.store.save("trace-"+id, &result); err != nil {
+	if err = h.store.save(kindTrace, id, &result); err != nil {
 		h.renderServerError(w, err.Error())
 		return
 	}
@@ -170,6 +171,7 @@ func (h FakeHandler) ProcessFileFetch(w http.ResponseWriter, r *http.Request) {
 	httpResponse, err := http.DefaultClient.Do(request)
 	if err != nil {
 		h.renderClientError(http.StatusBadRequest, w, err.Error())
+		return
 	}
 	defer httpResponse.Body.Close()
 
@@ -187,12 +189,12 @@ func (h FakeHandler) ProcessFileFetch(w http.ResponseWriter, r *http.Request) {
 	// saving result
 	result.ID = id
 	result.Metadata = metadata
-	err = h.store.save(id, &result)
+	err = h.store.save(kindResult, id, &result)
 	if err != nil {
 		h.renderServerError(w, err.Error())
 		return
 	}
-	if err = h.store.save("trace-"+id, &result); err != nil {
+	if err = h.store.save(kindTrace, id, &result); err != nil {
 		h.renderServerError(w, err.Error())
 		return
 	}
@@ -223,9 +225,13 @@ func (h FakeHandler) RetrieveFile(w http.ResponseWriter, _ *http.Request, id str
 	}
 
 	result := engine.Result{}
-	err := h.store.load(id, &result)
+	err := h.store.load(kindResult, id, &result)
+	if errors.Is(err, fs.ErrNotExist) {
+		h.renderClientError(http.StatusNotFound, w, fmt.Sprintf("Sadly, we could not find a file by that id %s", id))
+		return
+	}
 	if err != nil {
-		h.renderClientError(http.StatusNotFound, w, "Sadly, we could not find a file by that id %s")
+		h.renderServerError(w, err.Error())
 		return
 	}
 
@@ -266,13 +272,13 @@ func (h FakeHandler) DeleteFile(w http.ResponseWriter, _ *http.Request, id strin
 		return
 	}
 
-	found, err := h.store.remove(id)
-	if !found {
-		h.renderClientError(http.StatusNotFound, w, "could not find processing result")
-		return
-	}
+	found, err := h.store.remove(kindResult, id)
 	if err != nil {
 		h.renderServerError(w, err.Error())
+		return
+	}
+	if !found {
+		h.renderClientError(http.StatusNotFound, w, "could not find processing result")
 		return
 	}
 
@@ -340,6 +346,7 @@ func (h FakeHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 	err := r.ParseForm()
 	if err != nil {
 		h.renderServerError(w, err.Error())
+		return
 	}
 	timeoutInSeconds := 300
 	if r.Form.Get("timeout") != "" {
@@ -357,7 +364,7 @@ func (h FakeHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 		ID:             &id,
 	}
 
-	err = h.store.save(id, token)
+	err = h.store.save(kindToken, id, token)
 	if err != nil {
 		h.renderServerError(w, err.Error())
 		return
@@ -371,14 +378,13 @@ func (h FakeHandler) CreateToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h FakeHandler) DeleteToken(w http.ResponseWriter, _ *http.Request, id string) {
-	found, err := h.store.remove(id)
-	if !found {
-		h.renderClientError(http.StatusNotFound, w, "could not find token")
-		return
-	}
-
+	found, err := h.store.remove(kindToken, id)
 	if err != nil {
 		h.renderServerError(w, err.Error())
+		return
+	}
+	if !found {
+		h.renderClientError(http.StatusNotFound, w, "could not find token")
 		return
 	}
 
@@ -387,9 +393,13 @@ func (h FakeHandler) DeleteToken(w http.ResponseWriter, _ *http.Request, id stri
 
 func (h FakeHandler) RetrieveToken(w http.ResponseWriter, _ *http.Request, id string) {
 	token := &client.AuthToken{}
-	err := h.store.load(id, token)
-	if err != nil {
+	err := h.store.load(kindToken, id, token)
+	if errors.Is(err, fs.ErrNotExist) {
 		h.renderClientError(http.StatusNotFound, w, "could not find token")
+		return
+	}
+	if err != nil {
+		h.renderServerError(w, err.Error())
 		return
 	}
 
@@ -496,12 +506,12 @@ func (h FakeHandler) ProcessFile(w http.ResponseWriter, r *http.Request) {
 	result.Metadata = metadata
 
 	slog.Debug("saving result")
-	err = h.store.save(id, &result)
+	err = h.store.save(kindResult, id, &result)
 	if err != nil {
 		h.renderServerError(w, err.Error())
 		return
 	}
-	if err = h.store.save("trace-"+id, &result); err != nil {
+	if err = h.store.save(kindTrace, id, &result); err != nil {
 		h.renderServerError(w, err.Error())
 		return
 	}
@@ -533,8 +543,12 @@ func (h FakeHandler) ProcessFile(w http.ResponseWriter, r *http.Request) {
 }
 func (h FakeHandler) RetrieveTrace(w http.ResponseWriter, _ *http.Request, id string) {
 	result := engine.Result{}
-	if err := h.store.load("trace-"+id, &result); err != nil {
-		h.renderClientError(http.StatusNotFound, w, fmt.Sprintf("No trace exists for processing id %s", id))
+	if err := h.store.load(kindTrace, id, &result); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			h.renderClientError(http.StatusNotFound, w, fmt.Sprintf("No trace exists for processing id %s", id))
+			return
+		}
+		h.renderServerError(w, err.Error())
 		return
 	}
 
@@ -568,7 +582,7 @@ func (h FakeHandler) DeleteTrace(w http.ResponseWriter, _ *http.Request, id stri
 		h.renderClientError(http.StatusBadRequest, w, errorArgMissing)
 		return
 	}
-	found, err := h.store.remove("trace-" + id)
+	found, err := h.store.remove(kindTrace, id)
 	if err != nil {
 		h.renderServerError(w, err.Error())
 		return

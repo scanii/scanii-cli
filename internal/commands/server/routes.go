@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/uvasoftware/scanii-cli/assets"
@@ -48,10 +51,17 @@ func CORS(next http.Handler) http.Handler {
 	})
 }
 
-func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL string) {
+// Setup registers the mock API's routes on mux, keeping records in the data
+// directory. It fails only if that directory cannot be opened. The returned
+// closer releases the directory; Windows cannot remove it while it is open.
+func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL string) (io.Closer, error) {
+	st, err := newStore(data)
+	if err != nil {
+		return nil, err
+	}
 	handlers := FakeHandler{
 		engine:  eng,
-		store:   store{path: data},
+		store:   st,
 		baseurl: baseURL,
 	}
 
@@ -64,16 +74,11 @@ func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL st
 
 				// we allow two forms of authentication, API keys and auth tokens
 				if password == "" {
-					token := &client.AuthToken{}
-					err := handlers.store.load(username, token)
-					if err != nil {
-						slog.Error("failed to load token", "error", err)
-					} else {
-						ctx := context.WithValue(r.Context(), keyInContext, *token.ID)
+					if id, ok := handlers.validToken(username, time.Now()); ok {
+						ctx := context.WithValue(r.Context(), keyInContext, id)
 						next.ServeHTTP(w, r.WithContext(ctx))
 						return
 					}
-
 				} else {
 					usernameHash := sha256.Sum256([]byte(username))
 					passwordHash := sha256.Sum256([]byte(password))
@@ -155,6 +160,33 @@ func Setup(mux *http.ServeMux, eng *engine.Engine, key, secret, data, baseURL st
 	mux.Handle("DELETE /v2.2/auth/tokens/{id}", wrap(func(w http.ResponseWriter, r *http.Request) {
 		handlers.DeleteToken(w, r, r.PathValue("id"))
 	}))
+
+	return st.root, nil
+}
+
+// validToken reports whether id names an auth token that exists and has not
+// expired, returning the token's id. Tokens live in their own namespace, so a
+// processing result id is never accepted here.
+func (h FakeHandler) validToken(id string, now time.Time) (string, bool) {
+	token := &client.AuthToken{}
+	if err := h.store.load(kindToken, id, token); err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			slog.Error("failed to load token", "error", err)
+		}
+		return "", false
+	}
+	if token.ID == nil || *token.ID != id {
+		slog.Warn("ignoring malformed token record")
+		return "", false
+	}
+	if token.ExpirationDate == nil {
+		return "", false
+	}
+	expires, err := time.Parse(time.RFC3339, *token.ExpirationDate)
+	if err != nil || !now.Before(expires) {
+		return "", false
+	}
+	return id, true
 }
 
 func generateID() string {

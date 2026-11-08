@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -271,5 +275,197 @@ func TestProcessFile_NoFileNoLocation(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		raw, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status: want 400, got %d: %s", resp.StatusCode, raw)
+	}
+}
+
+// do sends a request with basic auth and returns the response status, closing
+// the body.
+func do(t *testing.T, method, url, user, pass string) int {
+	t.Helper()
+	req, err := http.NewRequestWithContext(t.Context(), method, url, http.NoBody)
+	if err != nil {
+		t.Fatalf("new request: %s", err)
+	}
+	req.SetBasicAuth(user, pass)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("%s %s: %s", method, url, err)
+	}
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+// processFile submits content and returns the processing id.
+func processFile(t *testing.T, baseURL string) string {
+	t.Helper()
+	body, ctype := multipartBody(t, nil, []byte("some content"))
+	resp, err := http.DefaultClient.Do(authReq(t, baseURL+"/v2.2/files", body, ctype))
+	if err != nil {
+		t.Fatalf("process: %s", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("process status: want 201, got %d", resp.StatusCode)
+	}
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created: %s", err)
+	}
+	return created.ID
+}
+
+// TestStoreRoutes_RejectTraversal verifies that ids carrying an encoded path
+// separator are not found and never reach a file outside the data directory.
+func TestStoreRoutes_RejectTraversal(t *testing.T) {
+	parent := t.TempDir()
+	data := filepath.Join(parent, "a", "data")
+	if err := os.MkdirAll(data, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(parent, "victim.json")
+	const content = `{"ID":"victim","id":"victim","expiration_date":"2999-01-01T00:00:00Z"}`
+	if err := os.WriteFile(victim, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ts := startServerIn(t, data)
+
+	const id = "..%2F..%2Fvictim"
+	cases := []struct{ method, path string }{
+		{http.MethodDelete, "/v2.2/files/" + id},
+		{http.MethodGet, "/v2.2/files/" + id},
+		{http.MethodGet, "/v2.2/files/" + id + "/trace"},
+		{http.MethodDelete, "/v2.2/files/" + id + "/trace"},
+		{http.MethodGet, "/v2.2/auth/tokens/" + id},
+		{http.MethodDelete, "/v2.2/auth/tokens/" + id},
+	}
+	for _, tc := range cases {
+		if got := do(t, tc.method, ts.URL+tc.path, "key", "secret"); got != http.StatusNotFound {
+			t.Errorf("%s %s: want 404, got %d", tc.method, tc.path, got)
+		}
+	}
+
+	got, err := os.ReadFile(victim)
+	if err != nil || string(got) != content {
+		t.Fatalf("file outside the data directory changed: %q, %v", got, err)
+	}
+}
+
+// TestAuth_ResultIDIsNotAToken verifies that a processing result id, which
+// every response carries, cannot be used as an auth token.
+func TestAuth_ResultIDIsNotAToken(t *testing.T) {
+	ts := startServer(t)
+	id := processFile(t, ts.URL)
+
+	if got := do(t, http.MethodGet, ts.URL+"/v2.2/ping", id, ""); got != http.StatusUnauthorized {
+		t.Fatalf("ping with a result id: want 401, got %d", got)
+	}
+	// nor does a token id retrieve a processing result
+	if got := do(t, http.MethodGet, ts.URL+"/v2.2/auth/tokens/"+id, "key", "secret"); got != http.StatusNotFound {
+		t.Fatalf("retrieve token by result id: want 404, got %d", got)
+	}
+}
+
+// TestAuth_Token verifies that a freshly created token authenticates, and
+// stops doing so once deleted.
+func TestAuth_Token(t *testing.T) {
+	ts := startServer(t)
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, ts.URL+"/v2.2/auth/tokens", strings.NewReader("timeout=60"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.SetBasicAuth("key", "secret")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("create token: %s", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("create token: want 201, got %d", resp.StatusCode)
+	}
+	var token struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := do(t, http.MethodGet, ts.URL+"/v2.2/ping", token.ID, ""); got != http.StatusOK {
+		t.Fatalf("ping with token: want 200, got %d", got)
+	}
+	if got := do(t, http.MethodGet, ts.URL+"/v2.2/auth/tokens/"+token.ID, "key", "secret"); got != http.StatusOK {
+		t.Fatalf("retrieve token: want 200, got %d", got)
+	}
+	// a token id does not retrieve a processing result
+	if got := do(t, http.MethodGet, ts.URL+"/v2.2/files/"+token.ID, "key", "secret"); got != http.StatusNotFound {
+		t.Fatalf("retrieve file by token id: want 404, got %d", got)
+	}
+	if got := do(t, http.MethodDelete, ts.URL+"/v2.2/auth/tokens/"+token.ID, "key", "secret"); got != http.StatusNoContent {
+		t.Fatalf("delete token: want 204, got %d", got)
+	}
+	if got := do(t, http.MethodGet, ts.URL+"/v2.2/ping", token.ID, ""); got != http.StatusUnauthorized {
+		t.Fatalf("ping with deleted token: want 401, got %d", got)
+	}
+}
+
+// TestAuth_BadTokenRecords verifies that token records that are expired,
+// lack an expiration or an id, or carry another id are refused without a
+// panic.
+func TestAuth_BadTokenRecords(t *testing.T) {
+	data := t.TempDir()
+	ts := startServerIn(t, data)
+
+	other := generateID()
+	cases := map[string]func(id string) string{
+		"expired": func(id string) string {
+			return `{"id":"` + id + `","expiration_date":"2000-01-01T00:00:00Z"}`
+		},
+		"no expiration": func(id string) string { return `{"id":"` + id + `"}` },
+		"bad expiration": func(id string) string {
+			return `{"id":"` + id + `","expiration_date":"tomorrow"}`
+		},
+		"no id":    func(string) string { return `{"expiration_date":"2999-01-01T00:00:00Z"}` },
+		"empty":    func(string) string { return `{}` },
+		"other id": func(string) string { return `{"id":"` + other + `","expiration_date":"2999-01-01T00:00:00Z"}` },
+		"not json": func(string) string { return `not json` },
+	}
+	for name, record := range cases {
+		t.Run(name, func(t *testing.T) {
+			id := generateID()
+			if err := os.WriteFile(filepath.Join(data, fileName(kindToken, id)), []byte(record(id)), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if got := do(t, http.MethodGet, ts.URL+"/v2.2/ping", id, ""); got != http.StatusUnauthorized {
+				t.Fatalf("ping: want 401, got %d", got)
+			}
+		})
+	}
+}
+
+// TestProcessFileFetch_Unreachable verifies that a location that cannot be
+// fetched gives a 400 rather than a panic.
+func TestProcessFileFetch_Unreachable(t *testing.T) {
+	ts := startServer(t)
+
+	// a listener that is closed straight away gives a port nothing answers on
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	_ = ln.Close()
+
+	req := authReq(t, ts.URL+"/v2.2/files/fetch", strings.NewReader("location=http://"+addr+"/"), "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("fetch: %s", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("fetch status: want 400, got %d", resp.StatusCode)
 	}
 }
