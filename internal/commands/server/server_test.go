@@ -147,3 +147,15 @@ func TestCallbackWaitFlagOverridesEngineConfig(t *testing.T) {
 func ptr[T any](v T) *T {
 	return &v
 }
+
+func TestCommandDefaultAddress(t *testing.T) {
+	t.Setenv(addressEnv, "")
+	if got := Command().PersistentFlags().Lookup("address").DefValue; got != "127.0.0.1:4000" {
+		t.Fatalf("default address: want 127.0.0.1:4000, got %s", got)
+	}
+
+	t.Setenv(addressEnv, "0.0.0.0:4000")
+	if got := Command().PersistentFlags().Lookup("address").DefValue; got != "0.0.0.0:4000" {
+		t.Fatalf("default address with %s set: want 0.0.0.0:4000, got %s", addressEnv, got)
+	}
+}

@@ -85,7 +85,9 @@ func RunServer(flags *Flags) error {
 		eng.SetCallbackWait(*flags.CallBackWait)
 	}
 
-	Setup(mux, eng, flags.Key, flags.Secret, flags.Data, "http://"+flags.Address)
+	if err := Setup(mux, eng, flags.Key, flags.Secret, flags.Data, "http://"+flags.Address); err != nil {
+		return err
+	}
 
 	// wrap the mux with request logging middleware
 	logger := httplog.NewLogger("sc", httplog.Options{
@@ -165,6 +167,16 @@ func serverEICAR(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte(assets.DecodedEICAR()))
 }
 
+// defaultAddress is where the server listens unless --address or the
+// addressEnv variable says otherwise: loopback only, so that a server started
+// for local testing is not reachable from the network.
+const defaultAddress = "127.0.0.1:4000"
+
+// addressEnv overrides defaultAddress. The container image sets it to
+// 0.0.0.0:4000, so that `docker run ... server` keeps answering on its
+// published port.
+const addressEnv = "SC_SERVER_ADDRESS"
+
 // Command returns the server cobra command.
 func Command() *cobra.Command {
 	serverF := Flags{}
@@ -181,12 +193,16 @@ func Command() *cobra.Command {
 		Short: "Start a mock server suitable for testing purposes",
 	}
 
-	serverCmd.PersistentFlags().StringVarP(&serverF.Address, "address", "a", "0.0.0.0:4000", "Address to listen on")
+	address := defaultAddress
+	if v := os.Getenv(addressEnv); v != "" {
+		address = v
+	}
+	serverCmd.PersistentFlags().StringVarP(&serverF.Address, "address", "a", address, "Address to listen on, defaults to $"+addressEnv+" when set")
 	serverCmd.PersistentFlags().StringVarP(&serverF.Engine, "engine", "e", "", "Optional engine config to load")
 	serverCmd.PersistentFlags().DurationVarP(&callbackWait, "callback-wait", "w", 100*time.Millisecond, "Amount of time a callback should wait before firing, overrides the engine config")
 	serverCmd.PersistentFlags().StringVarP(&serverF.Data, "data", "d", "", "Result storage path, defaults to a temp directory")
-	serverCmd.PersistentFlags().StringVarP(&serverF.Key, "key", "k", "key", "API key to use, if not provided will be dynamically generated")
-	serverCmd.PersistentFlags().StringVarP(&serverF.Secret, "secret", "s", "secret", "API secret to use, if not provided will be dynamically generated")
+	serverCmd.PersistentFlags().StringVarP(&serverF.Key, "key", "k", "key", "API key to use, pass an empty value to generate one")
+	serverCmd.PersistentFlags().StringVarP(&serverF.Secret, "secret", "s", "secret", "API secret to use, pass an empty value to generate one")
 
 	return serverCmd
 }
