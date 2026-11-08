@@ -50,7 +50,7 @@ func (t *progressTracker) label(filesDone uint64) string {
 	if !t.isDirectory {
 		return fmt.Sprintf("Uploading %s", t.name)
 	}
-	return fmt.Sprintf("Files %s/%s", terminal.FormatNumber(int64(filesDone)), terminal.FormatNumber(int64(t.filesTotal))) //nolint:gosec
+	return fmt.Sprintf("Files %s/%s", terminal.FormatNumber(int64(filesDone)), terminal.FormatNumber(int64(t.filesTotal))) // #nosec G115 -- file counts, nowhere near MaxInt64
 }
 
 // addBytes records bytes written to the wire. It is called from one goroutine

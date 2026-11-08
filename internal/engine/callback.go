@@ -67,7 +67,7 @@ func (e *Engine) newRunner() chan callbackItem {
 			if err != nil {
 				return
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 			slog.Debug("callback delivered", "destination", msg.destination, "status", resp.StatusCode)
 		}
 	}()

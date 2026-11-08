@@ -95,7 +95,7 @@ func (s *service) process(ctx context.Context, stream chan string, opts processO
 
 			r := resultRecord{path: path}
 
-			fd, err := os.Open(path)
+			fd, err := os.Open(path) // #nosec G304 -- a file the user asked sc to scan
 			if err != nil {
 				slog.Debug("could not open file", "path", path, "error", err.Error())
 				r.err = err

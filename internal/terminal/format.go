@@ -39,7 +39,7 @@ func FormatNumber(n int64) string {
 		if remaining%3 == 0 && i != 0 {
 			result = append(result, ',')
 		}
-		result = append(result, byte(c))
+		result = append(result, byte(c)) // #nosec G115 -- s is %d output: ASCII digits and '-'
 	}
 	return string(result)
 }

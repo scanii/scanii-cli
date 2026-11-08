@@ -30,7 +30,7 @@ func GenerateShortSecure() string {
 func generate(n int) string {
 	b := make([]byte, n)
 	for i := range b {
-		b[i] = runes[rand.Intn(len(runes))] //nolint:gosec
+		b[i] = runes[rand.Intn(len(runes))] // #nosec G404 -- request, host and generated-key ids, never secrets; generateSecure covers those
 	}
 	return string(b)
 }

@@ -49,7 +49,7 @@ func RunServer(flags *Flags) error {
 	if flags.Data == "" {
 		// Ensure the system temp directory exists — minimal Docker images
 		// (e.g. scratch, distroless) may not include /tmp.
-		if err := os.MkdirAll(os.TempDir(), 0755); err != nil {
+		if err := os.MkdirAll(os.TempDir(), 0755); err != nil { // #nosec G301 -- the system temp directory, created only where a minimal image lacks one
 			return fmt.Errorf("creating temp directory: %w", err)
 		}
 		dir, err := os.MkdirTemp("", "scanii-cli")
@@ -59,7 +59,7 @@ func RunServer(flags *Flags) error {
 		flags.Data = dir
 	} else {
 		if _, err := os.Stat(flags.Data); errors.Is(err, os.ErrNotExist) {
-			if err := os.MkdirAll(flags.Data, 0755); err != nil {
+			if err := os.MkdirAll(flags.Data, 0755); err != nil { // #nosec G301 -- result storage the user chose with --data; the result files are 0600
 				return fmt.Errorf("creating storage directory %s: %w", flags.Data, err)
 			}
 		}
@@ -180,7 +180,7 @@ func listen(address string) ([]net.Listener, error) {
 // path. Unknown fields are rejected by the decoder, so a file that is valid JSON
 // but not an engine config is reported rather than silently ignored.
 func loadEngineConfig(eng *engine.Engine, path string) error {
-	file, err := os.Open(path)
+	file, err := os.Open(path) // #nosec G304 -- the --engine config the user named
 	if err != nil {
 		return fmt.Errorf("opening engine config: %w", err)
 	}

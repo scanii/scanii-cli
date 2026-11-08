@@ -1,6 +1,6 @@
 module github.com/uvasoftware/scanii-cli
 
-go 1.26.2
+go 1.27.3
 
 require (
 	github.com/gabriel-vasile/mimetype v1.4.13

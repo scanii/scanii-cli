@@ -4,42 +4,110 @@ on:
   pull_request:
     branches: [ main ]
 
+# Read-only by default; a job that needs more says so itself.
+permissions:
+  contents: read
+
+# The required checks are lint, test and test/e2e. test and test/e2e are fan-in jobs over the 3-OS
+# matrices: a matrix leg reports "name (leg)", never the bare name a ruleset can require.
 jobs:
-  audit:
-    timeout-minutes: 5
+  # gofmt, go vet, staticcheck, govulncheck, gosec and the go-licenses allowlist (make lint). The
+  # analyzers are pinned in tools/go.mod.
+  lint:
+    name: lint
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the jobs run third-party tool code and need no git auth afterwards
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: 1.26
-          # take the newest 1.26.x rather than whatever the runner image ships,
-          # so that a stdlib vulnerability fixed in a patch release clears the
-          # audit job as soon as that release exists
+          go-version: '1.27'
+          # take the newest 1.27.x rather than whatever the runner image ships,
+          # so that a stdlib vulnerability fixed in a patch release clears
+          # govulncheck as soon as that release exists
           check-latest: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
-      - name: Audit
-        run: make audit
+      - run: make lint
 
-  test:
-    timeout-minutes: 5
+  # Module hygiene of both modules and the race suite (make test/ci) on every OS a release ships
+  # for, with the Go the release builds with (goreleaser.yaml).
+  unit:
+    name: unit (${{ matrix.os }})
+    timeout-minutes: 10
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        os: [ ubuntu-latest, windows-latest , macOS-latest]
+        os: [ ubuntu-latest, windows-latest, macOS-latest ]
     steps:
-      - uses: actions/checkout@v7
+      # Git for Windows checks text files out with CRLF line endings, and go mod tidy -diff then
+      # reports every line of go.sum as changed.
+      - name: Keep LF line endings
+        if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the jobs run third-party tool code and need no git auth afterwards
+          persist-credentials: false
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
-          go-version: 1.26
-          # take the newest 1.26.x rather than whatever the runner image ships,
-          # so that a stdlib vulnerability fixed in a patch release clears the
-          # audit job as soon as that release exists
+          go-version: '1.27'
+          check-latest: true
+          # the tools module's tidy check fetches its modules too
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      - run: make test/ci
+
+  test:
+    name: test
+    needs: unit
+    if: always()
+    timeout-minutes: 2
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ needs.unit.result }}" = success ]'
+
+  # Builds sc, starts sc server in the background and runs real sc commands against it (make test/e2e).
+  e2e:
+    name: e2e (${{ matrix.os }})
+    timeout-minutes: 10
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macOS-latest ]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # the jobs run third-party tool code and need no git auth afterwards
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version: '1.27'
           check-latest: true
 
-      - name: Run tests
-        run: make test
+      - run: make test/e2e
+
+  test-e2e:
+    name: test/e2e
+    needs: e2e
+    if: always()
+    timeout-minutes: 2
+    runs-on: ubuntu-latest
+    steps:
+      - run: '[ "${{ needs.e2e.result }}" = success ]'

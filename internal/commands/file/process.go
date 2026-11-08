@@ -124,7 +124,7 @@ func process(
 	if info.IsDir() {
 		isDirectory = true
 		emptyFiles, err := fsWalker(path, ignoreHidden, func(_ string, fi os.FileInfo) {
-			bytesTotal += uint64(fi.Size()) //nolint:gosec
+			bytesTotal += uint64(fi.Size()) // #nosec G115 -- a walked file's size is never negative
 			filesTotal++
 		})
 
@@ -150,7 +150,7 @@ func process(
 		}
 		filesTotal = 1
 		terminal.Info(fmt.Sprintf("Processing file %s", path))
-		bytesTotal += uint64(info.Size()) //nolint:gosec
+		bytesTotal += uint64(info.Size()) // #nosec G115 -- a regular file's size is never negative
 	}
 
 	// a walk that gives up part way through leaves files unvisited, which is a
@@ -263,7 +263,7 @@ func process(
 	}
 
 	fmt.Println()
-	terminal.Success(fmt.Sprintf("Completed in %s, %s file(s) analyzed. Throughput %s/s", terminal.FormatDuration(elapsed), terminal.FormatNumber(int64(filesFinished.Load())), terminal.FormatBytes(uint64(throughput)))) //nolint:gosec
+	terminal.Success(fmt.Sprintf("Completed in %s, %s file(s) analyzed. Throughput %s/s", terminal.FormatDuration(elapsed), terminal.FormatNumber(int64(filesFinished.Load())), terminal.FormatBytes(uint64(throughput)))) // #nosec G115 -- a file count and a non-negative throughput
 
 	counts := fmt.Sprintf("Files with findings: %d, unable to process: %d and successfully processed: %d", filesWithFindings.Load(), filesFailed.Load(), filesFinished.Load())
 	if filesFailed.Load() > 0 {
