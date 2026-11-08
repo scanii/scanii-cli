@@ -161,14 +161,13 @@ func (h FakeHandler) ProcessFileFetch(w http.ResponseWriter, r *http.Request) {
 
 	// fetching content
 	slog.Debug("fetching content from", "location", location)
-	//nolint:gosec
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, location, http.NoBody)
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, location, http.NoBody) // #nosec G704 -- fetching the caller's location is what /files/fetch does
 	if err != nil {
 		h.renderServerError(w, err.Error())
 		return
 	}
 
-	httpResponse, err := http.DefaultClient.Do(request)
+	httpResponse, err := http.DefaultClient.Do(request) // #nosec G704 -- fetching the caller's location is what /files/fetch does
 	if err != nil {
 		h.renderClientError(http.StatusBadRequest, w, err.Error())
 		return
@@ -596,7 +595,7 @@ func (h FakeHandler) DeleteTrace(w http.ResponseWriter, _ *http.Request, id stri
 
 func (h FakeHandler) renderServerError(w http.ResponseWriter, message string) {
 	trace := fmt.Sprintf("%s\n%s", message, debug.Stack())
-	slog.Error(trace)
+	slog.Error(trace) // #nosec G706 -- the mock server's own console log
 	h.renderClientError(http.StatusInternalServerError, w, message)
 }
 

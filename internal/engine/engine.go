@@ -145,7 +145,7 @@ func (e *Engine) Process(contents io.Reader) (Result, error) {
 
 	result.Sha1 = fmt.Sprintf("%x", s1.Sum(nil))
 	result.Sha256 = fmt.Sprintf("%x", s2.Sum(nil))
-	result.ContentLength = uint64(i) //nolint:gosec // G115: io.Copy never returns negative values
+	result.ContentLength = uint64(i) // #nosec G115 -- io.Copy never returns a negative count
 
 	result.ContentType = mime
 

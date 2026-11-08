@@ -310,7 +310,7 @@ func EnsureConfigDir() error {
 	if err != nil {
 		return err
 	}
-	return os.MkdirAll(dir, 0755)
+	return os.MkdirAll(dir, 0755) // #nosec G301 -- the profile files inside are written 0600
 }
 
 // Load reads and parses a profile by name.
@@ -324,7 +324,7 @@ func Load(profileName string) (*Profile, error) {
 
 	slog.Debug("loading config", "path", cp, "profile", profileName)
 
-	fd, err := os.Open(cp)
+	fd, err := os.Open(cp) // #nosec G304 -- the profile the user named with -p, under their own config directory
 	if err != nil {
 		if os.IsNotExist(err) {
 			if profileName == DefaultProfileName {
