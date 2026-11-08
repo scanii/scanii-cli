@@ -365,15 +365,17 @@ API Key:       key
 API Secret:    secret
 Engine Rules:  5
 Callback Wait: 100ms
-Address:       http://localhost:4000
+Address:       http://127.0.0.1:4000
 
-Sample usage: curl -u key:secret http://localhost:4000/v2.2/ping
+Sample usage: curl -u key:secret http://127.0.0.1:4000/v2.2/ping
 
 We also provide fake sample files you can use to trigger findings:
-  content.image.nsfw.nudity:         http://localhost:4000/static/samples/image.jpg
-  content.en.language.nsfw.0:        http://localhost:4000/static/samples/language.txt
-  content.malicious.local-test-file: http://localhost:4000/static/samples/malware
+  content.image.nsfw.nudity:         http://127.0.0.1:4000/static/samples/image.jpg
+  content.en.language.nsfw.0:        http://127.0.0.1:4000/static/samples/language.txt
+  content.malicious.local-test-file: http://127.0.0.1:4000/static/samples/malware
 ```
+
+The server listens on the loopback interface only, so it is reachable from the machine it runs on and nowhere else. To accept connections from other hosts, pass `--address 0.0.0.0:4000` or set `SC_SERVER_ADDRESS`; the Docker image already does, so a published container port keeps working.
 
 Default credentials are `key` / `secret`. Override them with flags:
 
@@ -385,7 +387,7 @@ sc server --key my-key --secret my-secret --address 0.0.0.0:8080
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-a, --address` | `localhost:4000` | Listen address |
+| `-a, --address` | `127.0.0.1:4000` | Listen address; `$SC_SERVER_ADDRESS` replaces the default when set |
 | `-k, --key` | `key` | API key |
 | `-s, --secret` | `secret` | API secret |
 | `-e, --engine` | built-in | Path to a custom engine rules JSON file |
